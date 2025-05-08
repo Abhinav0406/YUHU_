@@ -1,0 +1,487 @@
+
+import { supabase } from '@/lib/supabase';
+import { Database } from '@/types/supabase';
+
+export type ChatType = 'direct' | 'group';
+
+export interface Chat {
+  id: string;
+  type: ChatType;
+  name: string;
+  avatar: string;
+  lastMessage?: {
+    text: string;
+    time: string;
+    isRead: boolean;
+  };
+  online?: boolean;
+  unreadCount?: number;
+}
+
+export interface Message {
+  id: string;
+  senderId: string;
+  text: string;
+  time: string;
+  status: 'sent' | 'delivered' | 'read';
+  sender: {
+    id: string;
+    name: string;
+    avatar: string;
+  };
+  isFirst?: boolean;
+  isConsecutive?: boolean;
+}
+
+export async function getChats(userId: string): Promise<Chat[]> {
+  // Get all chats where user is a participant
+  const { data: participations, error: participationError } = await supabase
+    .from('chat_participants')
+    .select('chat_id')
+    .eq('profile_id', userId);
+
+  if (participationError) {
+    console.error('Error fetching chat participations:', participationError);
+    return [];
+  }
+
+  if (!participations || participations.length === 0) {
+    return [];
+  }
+
+  const chatIds = participations.map(p => p.chat_id);
+
+  // Get chat details
+  const { data: chats, error: chatError } = await supabase
+    .from('chats')
+    .select('*')
+    .in('id', chatIds);
+
+  if (chatError) {
+    console.error('Error fetching chats:', chatError);
+    return [];
+  }
+
+  // For direct chats, get the other participant's info
+  const processedChats = await Promise.all(chats.map(async (chat) => {
+    if (chat.type === 'direct') {
+      // Get the other participant
+      const { data: participants, error: participantError } = await supabase
+        .from('chat_participants')
+        .select('profile_id')
+        .eq('chat_id', chat.id)
+        .neq('profile_id', userId);
+
+      if (participantError) {
+        console.error('Error fetching other participant:', participantError);
+        return null;
+      }
+
+      if (!participants || participants.length === 0) {
+        return null;
+      }
+
+      const otherUserId = participants[0].profile_id;
+
+      // Get the other user's profile
+      const { data: userProfile, error: userError } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', otherUserId)
+        .single();
+
+      if (userError) {
+        console.error('Error fetching user profile:', userError);
+        return null;
+      }
+
+      // Get the last message
+      const { data: messages, error: messageError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chat.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      let lastMessage = undefined;
+      
+      if (!messageError && messages && messages.length > 0) {
+        lastMessage = {
+          text: messages[0].text,
+          time: new Date(messages[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isRead: messages[0].status === 'read' || messages[0].sender_id === userId
+        };
+      }
+
+      // Count unread messages
+      const { count, error: countError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('chat_id', chat.id)
+        .eq('status', 'delivered')
+        .neq('sender_id', userId);
+
+      const unreadCount = countError ? 0 : (count || 0);
+
+      return {
+        id: chat.id,
+        type: chat.type,
+        name: userProfile.full_name || userProfile.username,
+        avatar: userProfile.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${userProfile.username}`,
+        online: userProfile.status === 'online',
+        lastMessage,
+        unreadCount
+      };
+    } else {
+      // For group chats
+      // Get the last message
+      const { data: messages, error: messageError } = await supabase
+        .from('messages')
+        .select('*')
+        .eq('chat_id', chat.id)
+        .order('created_at', { ascending: false })
+        .limit(1);
+
+      let lastMessage = undefined;
+      
+      if (!messageError && messages && messages.length > 0) {
+        lastMessage = {
+          text: messages[0].text,
+          time: new Date(messages[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          isRead: messages[0].status === 'read' || messages[0].sender_id === userId
+        };
+      }
+
+      // Count unread messages
+      const { count, error: countError } = await supabase
+        .from('messages')
+        .select('*', { count: 'exact', head: true })
+        .eq('chat_id', chat.id)
+        .eq('status', 'delivered')
+        .neq('sender_id', userId);
+
+      const unreadCount = countError ? 0 : (count || 0);
+
+      return {
+        id: chat.id,
+        type: chat.type,
+        name: chat.name || 'Group Chat',
+        avatar: chat.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${chat.id}`,
+        lastMessage,
+        unreadCount
+      };
+    }
+  }));
+
+  return processedChats.filter(Boolean) as Chat[];
+}
+
+export async function getMessages(chatId: string, userId: string): Promise<Message[]> {
+  // Get messages for this chat
+  const { data: messagesData, error: messagesError } = await supabase
+    .from('messages')
+    .select('*')
+    .eq('chat_id', chatId)
+    .order('created_at', { ascending: true });
+
+  if (messagesError || !messagesData) {
+    console.error('Error fetching messages:', messagesError);
+    return [];
+  }
+
+  // Mark messages as read
+  const messagesToMark = messagesData
+    .filter(m => m.sender_id !== userId && m.status !== 'read')
+    .map(m => m.id);
+
+  if (messagesToMark.length > 0) {
+    await supabase
+      .from('messages')
+      .update({ status: 'read' })
+      .in('id', messagesToMark);
+  }
+
+  // Get all unique sender IDs
+  const senderIds = Array.from(new Set(messagesData.map(m => m.sender_id)));
+
+  // Fetch all senders at once
+  const { data: profiles, error: profilesError } = await supabase
+    .from('profiles')
+    .select('id, username, full_name, avatar_url')
+    .in('id', senderIds);
+
+  if (profilesError) {
+    console.error('Error fetching profiles:', profilesError);
+    return [];
+  }
+
+  // Create a map of profiles for easy lookup
+  const profilesMap = new Map();
+  profiles?.forEach(profile => {
+    profilesMap.set(profile.id, {
+      id: profile.id,
+      name: profile.full_name || profile.username,
+      avatar: profile.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.username}`
+    });
+  });
+
+  // Format messages
+  const messages = messagesData.map((message, index) => {
+    const prevMessage = index > 0 ? messagesData[index - 1] : null;
+    const isFirst = !prevMessage || prevMessage.sender_id !== message.sender_id;
+    const isConsecutive = !isFirst;
+    
+    const senderProfile = profilesMap.get(message.sender_id);
+    
+    return {
+      id: message.id,
+      senderId: message.sender_id,
+      text: message.text,
+      time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: message.status,
+      sender: senderProfile || {
+        id: message.sender_id,
+        name: 'Unknown',
+        avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=unknown`
+      },
+      isFirst,
+      isConsecutive
+    };
+  });
+
+  return messages;
+}
+
+export async function sendMessage(chatId: string, senderId: string, text: string): Promise<Message | null> {
+  // Create the message
+  const { data: message, error } = await supabase
+    .from('messages')
+    .insert({
+      chat_id: chatId,
+      sender_id: senderId,
+      text,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      status: 'sent',
+      created_at: new Date().toISOString()
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Error sending message:', error);
+    return null;
+  }
+
+  // Get the sender profile
+  const { data: profile, error: profileError } = await supabase
+    .from('profiles')
+    .select('username, full_name, avatar_url')
+    .eq('id', senderId)
+    .single();
+
+  if (profileError) {
+    console.error('Error fetching sender profile:', profileError);
+    return null;
+  }
+
+  return {
+    id: message.id,
+    senderId: message.sender_id,
+    text: message.text,
+    time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    status: message.status,
+    sender: {
+      id: senderId,
+      name: profile.full_name || profile.username,
+      avatar: profile.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.username}`
+    },
+    isFirst: true,
+    isConsecutive: false
+  };
+}
+
+export async function createDirectChat(userId: string, otherUserId: string): Promise<string | null> {
+  // Check if a direct chat already exists between these users
+  const { data: existingChats, error: chatCheckError } = await supabase
+    .from('chat_participants')
+    .select('chat_id')
+    .eq('profile_id', userId);
+
+  if (chatCheckError) {
+    console.error('Error checking existing chats:', chatCheckError);
+    return null;
+  }
+
+  if (existingChats && existingChats.length > 0) {
+    const chatIds = existingChats.map(c => c.chat_id);
+    
+    const { data: otherParticipations, error: otherPartError } = await supabase
+      .from('chat_participants')
+      .select('chat_id')
+      .eq('profile_id', otherUserId)
+      .in('chat_id', chatIds);
+
+    if (!otherPartError && otherParticipations && otherParticipations.length > 0) {
+      // Check if this is a direct chat (has exactly 2 participants)
+      for (const participation of otherParticipations) {
+        const { count, error: countError } = await supabase
+          .from('chat_participants')
+          .select('*', { count: 'exact', head: true })
+          .eq('chat_id', participation.chat_id);
+        
+        if (!countError && count === 2) {
+          // This is a direct chat between these users
+          const { data: chatData } = await supabase
+            .from('chats')
+            .select('type')
+            .eq('id', participation.chat_id)
+            .single();
+          
+          if (chatData && chatData.type === 'direct') {
+            return participation.chat_id;
+          }
+        }
+      }
+    }
+  }
+
+  // Create a new chat
+  const { data: newChat, error: createChatError } = await supabase
+    .from('chats')
+    .insert({
+      type: 'direct',
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    })
+    .select()
+    .single();
+
+  if (createChatError) {
+    console.error('Error creating chat:', createChatError);
+    return null;
+  }
+
+  // Add participants
+  const { error: addUser1Error } = await supabase
+    .from('chat_participants')
+    .insert({
+      chat_id: newChat.id,
+      profile_id: userId,
+      created_at: new Date().toISOString()
+    });
+
+  if (addUser1Error) {
+    console.error('Error adding first participant:', addUser1Error);
+    return null;
+  }
+
+  const { error: addUser2Error } = await supabase
+    .from('chat_participants')
+    .insert({
+      chat_id: newChat.id,
+      profile_id: otherUserId,
+      created_at: new Date().toISOString()
+    });
+
+  if (addUser2Error) {
+    console.error('Error adding second participant:', addUser2Error);
+    return null;
+  }
+
+  return newChat.id;
+}
+
+export async function getChatDetails(chatId: string, userId: string): Promise<{
+  id: string;
+  type: ChatType;
+  name: string;
+  avatar: string;
+  online?: boolean;
+  members?: { id: string; name: string }[];
+} | null> {
+  // Get chat info
+  const { data: chat, error: chatError } = await supabase
+    .from('chats')
+    .select('*')
+    .eq('id', chatId)
+    .single();
+
+  if (chatError) {
+    console.error('Error fetching chat:', chatError);
+    return null;
+  }
+
+  if (chat.type === 'direct') {
+    // Get the other participant
+    const { data: participants, error: participantError } = await supabase
+      .from('chat_participants')
+      .select('profile_id')
+      .eq('chat_id', chatId)
+      .neq('profile_id', userId);
+
+    if (participantError || !participants || participants.length === 0) {
+      console.error('Error fetching other participant:', participantError);
+      return null;
+    }
+
+    const otherUserId = participants[0].profile_id;
+
+    // Get the other user's profile
+    const { data: profile, error: profileError } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', otherUserId)
+      .single();
+
+    if (profileError) {
+      console.error('Error fetching user profile:', profileError);
+      return null;
+    }
+
+    return {
+      id: chat.id,
+      type: chat.type,
+      name: profile.full_name || profile.username,
+      avatar: profile.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.username}`,
+      online: profile.status === 'online'
+    };
+  } else {
+    // For group chats
+    // Get all members
+    const { data: memberParticipations, error: membersError } = await supabase
+      .from('chat_participants')
+      .select('profile_id')
+      .eq('chat_id', chatId);
+
+    if (membersError) {
+      console.error('Error fetching members:', membersError);
+      return null;
+    }
+
+    const memberIds = memberParticipations.map(m => m.profile_id);
+
+    // Get member profiles
+    const { data: memberProfiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('id, username, full_name')
+      .in('id', memberIds);
+
+    if (profilesError) {
+      console.error('Error fetching member profiles:', profilesError);
+      return null;
+    }
+
+    const members = memberProfiles.map(profile => ({
+      id: profile.id,
+      name: profile.full_name || profile.username
+    }));
+
+    return {
+      id: chat.id,
+      type: chat.type,
+      name: chat.name || 'Group Chat',
+      avatar: chat.avatar_url || `https://api.dicebear.com/7.x/identicon/svg?seed=${chat.id}`,
+      members
+    };
+  }
+}

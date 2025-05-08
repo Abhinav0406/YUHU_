@@ -1,0 +1,322 @@
+
+import { useState } from 'react';
+import { useAuth } from '@/context/AuthContext';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import {
+  Form,
+  FormControl,
+  FormField,
+  FormItem,
+  FormLabel,
+  FormMessage,
+} from '@/components/ui/form';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { useToast } from '@/components/ui/use-toast';
+import { Edit, Save, Loader2 } from 'lucide-react';
+import { useForm } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+
+// Define form schema
+const profileSchema = z.object({
+  fullName: z.string().min(2, { message: "Name must be at least 2 characters." }),
+  username: z.string().min(3, { message: "Username must be at least 3 characters." }),
+  email: z.string().email({ message: "Please enter a valid email address." }).optional(),
+  bio: z.string().optional(),
+  college: z.string().optional(),
+  major: z.string().optional(),
+});
+
+type ProfileFormValues = z.infer<typeof profileSchema>;
+
+const UserProfile = () => {
+  const { profile, updateProfile } = useAuth();
+  const { toast } = useToast();
+  const [isEditing, setIsEditing] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  
+  // Initialize form with react-hook-form
+  const form = useForm<ProfileFormValues>({
+    resolver: zodResolver(profileSchema),
+    defaultValues: {
+      fullName: profile?.fullName || '',
+      username: profile?.username || '',
+      email: profile?.email || '',
+      bio: profile?.bio || '',
+      college: profile?.college || '',
+      major: profile?.major || '',
+    },
+  });
+
+  const onSubmit = async (data: ProfileFormValues) => {
+    setIsSubmitting(true);
+    try {
+      const success = await updateProfile({
+        fullName: data.fullName,
+        username: data.username,
+        bio: data.bio || null,
+        college: data.college || null,
+        major: data.major || null
+      });
+      
+      if (success) {
+        toast({
+          title: "Profile updated",
+          description: "Your profile has been updated successfully.",
+        });
+        setIsEditing(false);
+      } else {
+        toast({
+          title: "Update failed",
+          description: "There was a problem updating your profile. Please try again.",
+          variant: "destructive"
+        });
+      }
+    } catch (error) {
+      toast({
+        title: "Error",
+        description: "An unexpected error occurred. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Card className="max-w-3xl mx-auto shadow-lg border-opacity-50 animate-fade-in">
+      <CardHeader>
+        <div className="flex items-center justify-between">
+          <div>
+            <CardTitle className="text-2xl font-bold text-yuhu-primary">My Profile</CardTitle>
+            <CardDescription className="text-muted-foreground">
+              Update your personal information and preferences
+            </CardDescription>
+          </div>
+          <Button 
+            variant="outline" 
+            size="sm" 
+            onClick={() => setIsEditing(!isEditing)}
+            className="border-yuhu-primary text-yuhu-primary hover:bg-yuhu-primary/10"
+            disabled={isSubmitting}
+          >
+            {isEditing ? (
+              <>
+                <Save className="mr-2 h-4 w-4" />
+                Save
+              </>
+            ) : (
+              <>
+                <Edit className="mr-2 h-4 w-4" />
+                Edit
+              </>
+            )}
+          </Button>
+        </div>
+      </CardHeader>
+
+      <CardContent>
+        <Form {...form}>
+          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+            <div className="flex flex-col items-center mb-6">
+              <Avatar className="h-24 w-24 border-4 border-yuhu-primary/20">
+                <AvatarImage src={profile?.avatar || ''} alt={profile?.username} />
+                <AvatarFallback className="bg-yuhu-primary text-white text-xl">
+                  {profile?.username ? profile.username[0].toUpperCase() : 'U'}
+                </AvatarFallback>
+              </Avatar>
+              {isEditing && (
+                <Button type="button" variant="link" className="mt-2 text-yuhu-primary">
+                  Change avatar
+                </Button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <FormField
+                control={form.control}
+                name="fullName"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Full Name</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field}
+                        placeholder="Your name" 
+                        disabled={!isEditing || isSubmitting}
+                        className="focus-visible:ring-yuhu-primary"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="username"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Username</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field}
+                        placeholder="username" 
+                        disabled={!isEditing || isSubmitting}
+                        className="focus-visible:ring-yuhu-primary"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="email"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>Email</FormLabel>
+                    <FormControl>
+                      <Input 
+                        {...field}
+                        placeholder="your.email@college.edu" 
+                        disabled={true} // Email can't be changed
+                        className="focus-visible:ring-yuhu-primary bg-gray-50"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="college"
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>College</FormLabel>
+                    <Select
+                      disabled={!isEditing || isSubmitting}
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="focus-visible:ring-yuhu-primary">
+                          <SelectValue placeholder="Select your college" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="engineering">College of Engineering</SelectItem>
+                        <SelectItem value="arts">College of Arts & Sciences</SelectItem>
+                        <SelectItem value="business">School of Business</SelectItem>
+                        <SelectItem value="education">College of Education</SelectItem>
+                        <SelectItem value="medicine">School of Medicine</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="major"
+                render={({ field }) => (
+                  <FormItem className="col-span-1 md:col-span-2">
+                    <FormLabel>Major</FormLabel>
+                    <Select
+                      disabled={!isEditing || isSubmitting}
+                      onValueChange={field.onChange}
+                      defaultValue={field.value}
+                    >
+                      <FormControl>
+                        <SelectTrigger className="focus-visible:ring-yuhu-primary">
+                          <SelectValue placeholder="Select your major" />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent>
+                        <SelectItem value="cs">Computer Science</SelectItem>
+                        <SelectItem value="mech">Mechanical Engineering</SelectItem>
+                        <SelectItem value="bio">Biology</SelectItem>
+                        <SelectItem value="business">Business Administration</SelectItem>
+                        <SelectItem value="psych">Psychology</SelectItem>
+                        <SelectItem value="english">English</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="bio"
+                render={({ field }) => (
+                  <FormItem className="col-span-1 md:col-span-2">
+                    <FormLabel>Bio</FormLabel>
+                    <FormControl>
+                      <Textarea 
+                        {...field}
+                        placeholder="Tell us a little about yourself" 
+                        disabled={!isEditing || isSubmitting}
+                        className="min-h-[120px] focus-visible:ring-yuhu-primary"
+                      />
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+            </div>
+
+            {isEditing && (
+              <div className="flex justify-end space-x-2">
+                <Button 
+                  type="button" 
+                  variant="outline" 
+                  onClick={() => setIsEditing(false)}
+                  className="border-yuhu-primary text-yuhu-primary hover:bg-yuhu-primary/10"
+                  disabled={isSubmitting}
+                >
+                  Cancel
+                </Button>
+                <Button 
+                  type="submit"
+                  className="bg-yuhu-primary hover:bg-yuhu-dark"
+                  disabled={isSubmitting}
+                >
+                  {isSubmitting ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Saving...
+                    </>
+                  ) : (
+                    'Save Changes'
+                  )}
+                </Button>
+              </div>
+            )}
+          </form>
+        </Form>
+      </CardContent>
+    </Card>
+  );
+};
+
+export default UserProfile;
