@@ -43,7 +43,7 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
     return (
       <header className="bg-zinc-900 border-b border-zinc-800 py-4 px-4 sm:px-6 flex items-center justify-between">
         <div className="flex items-center">
-          <img src="./images/logo2.webp" alt="Yuhu Logo" className="h-8 w-8 mr-2" />
+          <img src="./images/Logo2.png" alt="Yuhu Logo" className="h-8 w-8 mr-2" />
           <h1 className="text-xl sm:text-2xl font-bold text-white">Yuhu</h1>
           <span className="ml-2 text-sm text-zinc-400 hidden sm:inline">Your Campus, Connected</span>
         </div>
