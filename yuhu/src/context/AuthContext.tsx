@@ -76,27 +76,68 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     if (session?.user) {
       setUser(session.user);
       
-      // Fetch profile data
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', session.user.id)
-        .single();
+      try {
+        // Fetch profile data
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', session.user.id)
+          .single();
 
-      if (!error && data) {
-        setProfile({
-          id: data.id,
-          username: data.username,
-          fullName: data.full_name,
-          email: data.email,
-          avatar: data.avatar_url,
-          status: data.status || 'online',
-          bio: data.bio,
-          college: data.college,
-          major: data.major
-        });
-      } else if (error) {
-        console.error('Error fetching profile:', error);
+        if (error) {
+          // If profile doesn't exist, create one
+          if (error.code === 'PGRST116') {
+            const { data: newProfile, error: createError } = await supabase
+              .from('profiles')
+              .insert({
+                id: session.user.id,
+                username: session.user.email?.split('@')[0] || 'user',
+                full_name: session.user.email?.split('@')[0] || 'User',
+                email: session.user.email || '',
+                avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.user.email}`,
+                status: 'online',
+                created_at: new Date().toISOString(),
+                updated_at: new Date().toISOString()
+              })
+              .select()
+              .single();
+
+            if (createError) {
+              console.error('Error creating profile:', createError);
+              return;
+            }
+
+            if (newProfile) {
+              setProfile({
+                id: newProfile.id,
+                username: newProfile.username,
+                fullName: newProfile.full_name,
+                email: newProfile.email,
+                avatar: newProfile.avatar_url,
+                status: newProfile.status,
+                bio: newProfile.bio,
+                college: newProfile.college,
+                major: newProfile.major
+              });
+            }
+          } else {
+            console.error('Error fetching profile:', error);
+          }
+        } else if (data) {
+          setProfile({
+            id: data.id,
+            username: data.username,
+            fullName: data.full_name,
+            email: data.email,
+            avatar: data.avatar_url,
+            status: data.status,
+            bio: data.bio,
+            college: data.college,
+            major: data.major
+          });
+        }
+      } catch (err) {
+        console.error('Error in handleSession:', err);
       }
     } else {
       setUser(null);

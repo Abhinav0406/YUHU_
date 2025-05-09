@@ -1,4 +1,3 @@
-
 import { Link, useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -10,7 +9,9 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { MessageSquare, User, Settings, LogOut } from 'lucide-react';
+import { MessageSquare, User, Settings, LogOut, UserPlus } from 'lucide-react';
+import { Dialog, DialogTrigger, DialogContent } from '@/components/ui/dialog';
+import UserExplorer from './UserExplorer';
 
 const Header: React.FC = () => {
   const { user, profile, isAuthenticated, logout } = useAuth();
@@ -66,7 +67,16 @@ const Header: React.FC = () => {
               </Link>
             </Button>
           </nav>
-          
+          <Dialog>
+            <DialogTrigger asChild>
+              <Button variant="ghost" size="icon" className="text-yuhu-primary" title="Add Friend">
+                <UserPlus className="h-6 w-6" />
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-lg w-full">
+              <UserExplorer />
+            </DialogContent>
+          </Dialog>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-10 w-10 rounded-full">

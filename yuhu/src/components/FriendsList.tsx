@@ -1,5 +1,4 @@
-
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -13,6 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, UserPlus, Check, X } from 'lucide-react';
+import { getFriends } from '../services/friendService';
 
 // Mock data - in a real app this would come from an API or database
 const mockFriends = [
@@ -94,9 +94,24 @@ const mockSuggestions = [
   },
 ];
 
-const FriendsList = () => {
+interface Friend {
+  user1_email: string;
+  user2_email: string;
+}
+
+const FriendsList: React.FC<{ userEmail: string; onStartChat: (friendEmail: string) => void }> = ({ userEmail, onStartChat }) => {
+  const [friends, setFriends] = useState<Friend[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
   
+  useEffect(() => {
+    const fetchFriends = async () => {
+      const friendsList = await getFriends(userEmail);
+      setFriends(friendsList);
+    };
+
+    fetchFriends();
+  }, [userEmail]);
+
   const filteredFriends = mockFriends.filter(friend => 
     friend.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
     friend.username.toLowerCase().includes(searchQuery.toLowerCase())

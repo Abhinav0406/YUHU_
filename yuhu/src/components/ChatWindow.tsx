@@ -1,4 +1,3 @@
-
 import { useState, useEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
@@ -10,6 +9,7 @@ import { Button } from '@/components/ui/button';
 import { Phone, Video, Loader2 } from 'lucide-react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { getMessages, getChatDetails, sendMessage } from '@/services/chatService';
+import { supabase } from '@/lib/supabase';
 
 interface ChatWindowProps {
   chatId?: string;
@@ -90,6 +90,31 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
       scrollToBottom();
     }, 100);
   };
+
+  // Real-time subscription for new messages
+  useEffect(() => {
+    if (!activeChatId) return;
+
+    const channel = supabase
+      .channel('realtime:messages')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages',
+          filter: `chat_id=eq.${activeChatId}`,
+        },
+        (payload) => {
+          queryClient.invalidateQueries({ queryKey: ['messages', activeChatId] });
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeChatId, queryClient]);
 
   // Loading state
   if (isLoadingDetails || isLoadingMessages) {

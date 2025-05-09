@@ -1,12 +1,21 @@
-
 import { useState } from 'react';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout';
 import UserProfile from '@/components/UserProfile';
 import FriendsList from '@/components/FriendsList';
+import UserExplorer from '../components/UserExplorer';
+import { useAuth } from '@/context/AuthContext';
+import { useNavigate } from 'react-router-dom';
 
 const Profile = () => {
   const [activeTab, setActiveTab] = useState('profile');
+  const { user } = useAuth();
+  const navigate = useNavigate();
+
+  const handleStartChat = (friendEmail: string) => {
+    // Navigate to chat with the selected friend
+    navigate(`/chat/${friendEmail}`);
+  };
   
   return (
     <Layout requireAuth={true}>
@@ -41,9 +50,19 @@ const Profile = () => {
           </TabsContent>
           
           <TabsContent value="friends" className="animate-fade-in focus-visible:outline-none">
-            <FriendsList />
+            {user?.email && (
+              <FriendsList 
+                userEmail={user.email} 
+                onStartChat={handleStartChat}
+              />
+            )}
           </TabsContent>
         </Tabs>
+
+        {/* Add the UserExplorer component to display other users */}
+        <div className="mt-6">
+          <UserExplorer />
+        </div>
       </div>
     </Layout>
   );
