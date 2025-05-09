@@ -12,6 +12,7 @@ import {
 import { MessageSquare, User, Settings, LogOut, UserPlus } from 'lucide-react';
 import { Dialog, DialogTrigger, DialogContent } from '@/components/ui/dialog';
 import UserExplorerTabs from './UserExplorer';
+import img from './images/logo2.webp';
 
 const Header: React.FC = () => {
   const { user, profile, isAuthenticated, logout } = useAuth();
@@ -36,6 +37,7 @@ const Header: React.FC = () => {
     return (
       <header className="bg-white border-b border-gray-100 py-4 px-6 flex items-center justify-between">
         <div className="flex items-center">
+          <img src="./images/logo2.webp" alt="Yuhu Logo" className="h-8 w-8 mr-2" />
           <h1 className="text-2xl font-bold text-yuhu-primary">Yuhu</h1>
           <span className="ml-2 text-sm text-gray-500">Your Campus, Connected</span>
         </div>
@@ -47,6 +49,7 @@ const Header: React.FC = () => {
     <header className="bg-white border-b border-gray-100 py-3 px-6 flex items-center justify-between">
       <div className="flex items-center">
         <Link to={isAuthenticated ? "/chat" : "/"}>
+          <img src="/images/logo2.webp" alt="Yuhu Logo" className="h-8 w-8 mr-2" />
           <h1 className="text-2xl font-bold text-yuhu-primary">Yuhu</h1>
         </Link>
       </div>
