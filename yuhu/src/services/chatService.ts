@@ -614,3 +614,29 @@ export async function getOrCreateDirectChatByEmail(currentUserEmail: string, oth
 
   return newChat.id; // always return the chat ID
 }
+
+export async function deleteMessage(messageId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('messages')
+    .delete()
+    .eq('id', messageId);
+
+  if (error) {
+    console.error('Error deleting message:', error);
+    return false;
+  }
+  return true;
+}
+
+export async function clearChat(chatId: string): Promise<boolean> {
+  const { error } = await supabase
+    .from('messages')
+    .delete()
+    .eq('chat_id', chatId);
+
+  if (error) {
+    console.error('Error clearing chat:', error);
+    return false;
+  }
+  return true;
+}

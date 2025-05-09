@@ -1,25 +1,33 @@
-import { useState, useEffect, useRef } from 'react';
-import { useParams } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { getMessages, sendMessage, clearChat, getChatDetails } from '@/services/chatService';
 import Message from './Message';
 import MessageInput from './MessageInput';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
-import { Phone, Video, Loader2 } from 'lucide-react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { getMessages, getChatDetails, sendMessage } from '@/services/chatService';
+import { Send, Trash2, X } from 'lucide-react';
+import { format } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { useParams } from 'react-router-dom';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { Phone, Video, Loader2, MoreVertical } from 'lucide-react';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { supabase } from '@/lib/supabase';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 
 interface ChatWindowProps {
   chatId?: string;
+  onClose: () => void;
 }
 
-const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
+const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) => {
   const { chatId: paramChatId } = useParams<{ chatId: string }>();
   const { user } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
+  const [isClearChatDialogOpen, setIsClearChatDialogOpen] = useState(false);
   
   const activeChatId = propChatId || paramChatId;
   const [isTyping, setIsTyping] = useState(false);
@@ -49,8 +57,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: ({ chatId, senderId, text, type }: { chatId: string, senderId: string, text: string, type?: string }) => 
-      sendMessage(chatId, senderId, text, type),
+    mutationFn: ({ chatId, senderId, text }: { chatId: string, senderId: string, text: string }) => 
+      sendMessage(chatId, senderId, text),
     onSuccess: (newMessage) => {
       if (newMessage) {
         queryClient.setQueryData(['messages', activeChatId], (oldMessages: any = []) => [
@@ -115,6 +123,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
       supabase.removeChannel(channel);
     };
   }, [activeChatId, queryClient]);
+
+  const clearChatMutation = useMutation({
+    mutationFn: () => clearChat(activeChatId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', activeChatId] });
+      setIsClearChatDialogOpen(false);
+    },
+  });
+
+  const handleClearChat = () => {
+    setIsClearChatDialogOpen(true);
+  };
 
   // Loading state
   if (isLoadingDetails || isLoadingMessages) {
@@ -192,6 +212,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
             <Video className="h-5 w-5" />
             <span className="sr-only">Video call</span>
           </Button>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" size="icon" className="text-muted-foreground touch-target">
+                <MoreVertical className="h-5 w-5" />
+                <span className="sr-only">More options</span>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem
+                className="text-red-600"
+                onClick={handleClearChat}
+              >
+                <Trash2 className="h-4 w-4 mr-2" />
+                Clear Chat
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </div>
       
@@ -202,6 +239,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
             <Message
               key={message.id}
               {...message}
+              chatId={activeChatId!}
             />
           ))}
           {isTyping && (
@@ -230,6 +268,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
           disabled={sendMessageMutation.isPending}
         />
       </div>
+
+      <ConfirmationDialog
+        isOpen={isClearChatDialogOpen}
+        onClose={() => setIsClearChatDialogOpen(false)}
+        onConfirm={() => clearChatMutation.mutate()}
+        title="Clear Chat"
+        description="Are you sure you want to clear all messages in this chat? This action cannot be undone."
+        confirmText="Clear Chat"
+        cancelText="Cancel"
+      />
     </div>
   );
 };

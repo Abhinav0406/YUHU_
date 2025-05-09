@@ -1,7 +1,18 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
+import { MoreVertical, Trash2 } from 'lucide-react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Button } from '@/components/ui/button';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { deleteMessage } from '@/services/chatService';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 
 interface MessageProps {
   id: string;
@@ -16,9 +27,11 @@ interface MessageProps {
   status?: 'sent' | 'delivered' | 'read';
   isFirst?: boolean;
   isConsecutive?: boolean;
+  chatId: string;
 }
 
 const Message: React.FC<MessageProps> = ({
+  id,
   senderId,
   sender,
   text,
@@ -26,61 +39,112 @@ const Message: React.FC<MessageProps> = ({
   status = 'sent',
   isFirst = true,
   isConsecutive = false,
+  chatId,
 }) => {
   const { user } = useAuth();
   const isMe = senderId === user?.id;
+  const queryClient = useQueryClient();
+  const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+
+  const deleteMessageMutation = useMutation({
+    mutationFn: () => deleteMessage(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+      setIsDeleteDialogOpen(false);
+    },
+  });
+
+  const handleDelete = () => {
+    setIsDeleteDialogOpen(true);
+  };
   
   return (
-    <div
-      className={cn(
-        "flex w-full mb-1",
-        isMe ? "justify-end" : "justify-start"
-      )}
-    >
-      {!isMe && isFirst && (
-        <div className="flex-shrink-0 mr-2 mt-auto">
-          <Avatar className="h-7 w-7">
-            <AvatarImage src={sender.avatar} alt={sender.name} />
-            <AvatarFallback>{sender.name[0]}</AvatarFallback>
-          </Avatar>
-        </div>
-      )}
-      
-      {!isMe && !isFirst && <div className="w-7 mr-2" />}
-      
-      <div className={cn("flex flex-col", isMe && "items-end")}>
-        {isFirst && !isMe && (
-          <div className="text-xs text-muted-foreground ml-1 mb-0.5">
-            {sender.name}
+    <>
+      <div
+        className={cn(
+          "flex w-full mb-1 group relative",
+          isMe ? "justify-end" : "justify-start"
+        )}
+      >
+        {!isMe && isFirst && (
+          <div className="flex-shrink-0 mr-2 mt-auto">
+            <Avatar className="h-7 w-7">
+              <AvatarImage src={sender.avatar} alt={sender.name} />
+              <AvatarFallback>{sender.name[0]}</AvatarFallback>
+            </Avatar>
           </div>
         )}
         
-        <div className="flex items-end gap-1">
+        {!isMe && !isFirst && <div className="w-7 mr-2" />}
+        
+        <div className={cn("flex flex-col relative", isMe && "items-end")}>
+          {isFirst && !isMe && (
+            <div className="text-xs text-muted-foreground ml-1 mb-0.5">
+              {sender.name}
+            </div>
+          )}
+          
+          <div className="flex items-end gap-1">
+            <div
+              className={cn(
+                "chat-bubble relative group/message",
+                isMe ? "chat-bubble-sent" : "chat-bubble-received",
+                isConsecutive && isMe && "rounded-tr-md",
+                isConsecutive && !isMe && "rounded-tl-md",
+              )}
+            >
+              <p className="text-sm">{text}</p>
+              {isMe && (
+                <div className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-6 w-6 hover:bg-muted/50"
+                      >
+                        <MoreVertical className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end" className="w-40">
+                      <DropdownMenuItem
+                        className="text-red-600 cursor-pointer hover:bg-red-50"
+                        onClick={handleDelete}
+                      >
+                        <Trash2 className="h-4 w-4 mr-2" />
+                        Delete Message
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
+            </div>
+          </div>
+          
           <div
             className={cn(
-              "chat-bubble",
-              isMe ? "chat-bubble-sent" : "chat-bubble-received",
-              isConsecutive && isMe && "rounded-tr-md",
-              isConsecutive && !isMe && "rounded-tl-md",
+              "flex items-center gap-1 text-[10px] px-2",
+              isMe ? "justify-end text-muted-foreground" : "justify-start text-muted-foreground"
             )}
           >
-            <p className="text-sm">{text}</p>
+            <span>{time}</span>
+            {isMe && status === 'read' && (
+              <span className="text-yuhu-primary">• Read</span>
+            )}
           </div>
         </div>
-        
-        <div
-          className={cn(
-            "flex items-center gap-1 text-[10px] px-2",
-            isMe ? "justify-end text-muted-foreground" : "justify-start text-muted-foreground"
-          )}
-        >
-          <span>{time}</span>
-          {isMe && status === 'read' && (
-            <span className="text-yuhu-primary">• Read</span>
-          )}
-        </div>
       </div>
-    </div>
+
+      <ConfirmationDialog
+        isOpen={isDeleteDialogOpen}
+        onClose={() => setIsDeleteDialogOpen(false)}
+        onConfirm={() => deleteMessageMutation.mutate()}
+        title="Delete Message"
+        description="Are you sure you want to delete this message? This action cannot be undone."
+        confirmText="Delete Message"
+        cancelText="Cancel"
+      />
+    </>
   );
 };
 
