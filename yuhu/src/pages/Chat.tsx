@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
+import Header from '../components/Header';
 import UserList from '../components/UserList';
 import { Input } from '@/components/ui/input';
-import { Search } from 'lucide-react';
+import { Search, X } from 'lucide-react';
 import { getFriends } from '../services/friendService';
 import { supabase } from '@/lib/supabase';
 import { getOrCreateDirectChatByEmail } from '../services/chatService';
@@ -16,6 +17,7 @@ const Chat = () => {
   const [friends, setFriends] = useState([]);
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState('');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   useEffect(() => {
     const fetchUserEmail = async () => {
@@ -68,13 +70,15 @@ const Chat = () => {
       setSelectedChatId(chatId);
     }
     setLoadingChat(false);
+    setSidebarOpen(false); // Close sidebar on mobile after selecting
   };
 
   return (
-    <Layout>
-      <div className="flex h-screen bg-zinc-900 text-zinc-100">
-        {/* Sidebar */}
-        <aside className="w-[340px] flex flex-col border-r border-zinc-800 bg-zinc-950/95 shadow-lg">
+    <div className="flex flex-col h-screen bg-zinc-900 text-zinc-100">
+      <Header onSidebarToggle={() => setSidebarOpen(true)} />
+      <div className="flex flex-1 min-h-0">
+        {/* Sidebar - Desktop */}
+        <aside className="hidden md:flex w-[340px] flex-col border-r border-zinc-800 bg-zinc-950/95 shadow-lg h-full">
           <div className="p-4 border-b border-zinc-800">
             <div className="relative mb-4">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 h-4 w-4" />
@@ -94,6 +98,45 @@ const Chat = () => {
             )}
           </div>
         </aside>
+        {/* Sidebar - Mobile Drawer */}
+        {sidebarOpen && (
+          <div className="fixed inset-0 z-40 flex md:hidden">
+            {/* Overlay */}
+            <div
+              className="fixed inset-0 bg-black/60"
+              onClick={() => setSidebarOpen(false)}
+              aria-label="Close sidebar overlay"
+            />
+            {/* Drawer */}
+            <aside className="relative w-4/5 max-w-xs bg-zinc-950 border-r border-zinc-800 shadow-lg h-full flex flex-col animate-slide-in-left">
+              <button
+                className="absolute top-4 right-4 z-50 bg-zinc-800 p-2 rounded-full shadow-lg focus:outline-none"
+                onClick={() => setSidebarOpen(false)}
+                aria-label="Close sidebar"
+              >
+                <X className="h-6 w-6 text-white" />
+              </button>
+              <div className="p-4 border-b border-zinc-800">
+                <div className="relative mb-4">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 h-4 w-4" />
+                  <Input
+                    className="pl-9 py-2 rounded-lg bg-zinc-900 text-zinc-100 border-zinc-700 focus:ring-yuhu-primary"
+                    placeholder="Search chats or users..."
+                    value={search}
+                    onChange={e => setSearch(e.target.value)}
+                  />
+                </div>
+              </div>
+              <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2">
+                {loading ? (
+                  <div className="text-zinc-400 text-center mt-8">Loading friends...</div>
+                ) : (
+                  <UserList users={filteredFriends} onUserSelect={handleUserSelect} />
+                )}
+              </div>
+            </aside>
+          </div>
+        )}
         {/* Chat Window */}
         <section className="flex-1 flex flex-col bg-zinc-900">
           {loadingChat ? (
@@ -109,7 +152,7 @@ const Chat = () => {
           )}
         </section>
       </div>
-    </Layout>
+    </div>
   );
 };
 

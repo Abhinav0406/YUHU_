@@ -49,8 +49,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: ({ chatId, senderId, text }: { chatId: string, senderId: string, text: string }) => 
-      sendMessage(chatId, senderId, text),
+    mutationFn: ({ chatId, senderId, text, type }: { chatId: string, senderId: string, text: string, type?: string }) => 
+      sendMessage(chatId, senderId, text, type),
     onSuccess: (newMessage) => {
       if (newMessage) {
         queryClient.setQueryData(['messages', activeChatId], (oldMessages: any = []) => [
@@ -76,16 +76,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
     }
   };
   
-  const handleSendMessage = (text: string) => {
-    if (!activeChatId || !user || !text.trim()) return;
+  const handleSendMessage = (msg: string) => {
+    if (!activeChatId || !user) return;
+    if (!msg.trim()) return;
     
     sendMessageMutation.mutate({
       chatId: activeChatId,
       senderId: user.id,
-      text: text.trim()
+      text: msg.trim(),
     });
     
-    // Scroll to bottom when a new message is sent
     setTimeout(() => {
       scrollToBottom();
     }, 100);
@@ -164,17 +164,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
   }
   
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full w-full max-w-full bg-background">
       {/* Chat header */}
-      <div className="border-b p-3 flex items-center justify-between">
-        <div className="flex items-center">
-          <Avatar className="h-9 w-9">
+      <div className="border-b p-2 sm:p-3 flex items-center justify-between min-h-[56px] sm:min-h-[64px]">
+        <div className="flex items-center min-w-0">
+          <Avatar className="h-8 w-8 sm:h-9 sm:w-9">
             <AvatarImage src={chatDetails.avatar} alt={chatDetails.name} />
             <AvatarFallback>{chatDetails.name[0]}</AvatarFallback>
           </Avatar>
-          <div className="ml-3">
-            <div className="font-semibold">{chatDetails.name}</div>
-            <div className="text-xs text-muted-foreground">
+          <div className="ml-2 sm:ml-3 min-w-0">
+            <div className="font-semibold text-base sm:text-lg truncate">{chatDetails.name}</div>
+            <div className="text-xs sm:text-sm text-muted-foreground truncate">
               {chatDetails.type === 'direct' ? (
                 chatDetails.online ? 'Online' : 'Offline'
               ) : (
@@ -184,11 +184,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
           </div>
         </div>
         <div className="flex items-center space-x-1">
-          <Button variant="ghost" size="icon" className="text-muted-foreground">
+          <Button variant="ghost" size="icon" className="text-muted-foreground touch-target">
             <Phone className="h-5 w-5" />
             <span className="sr-only">Voice call</span>
           </Button>
-          <Button variant="ghost" size="icon" className="text-muted-foreground">
+          <Button variant="ghost" size="icon" className="text-muted-foreground touch-target">
             <Video className="h-5 w-5" />
             <span className="sr-only">Video call</span>
           </Button>
@@ -196,8 +196,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
       </div>
       
       {/* Messages area */}
-      <ScrollArea className="flex-1 p-4">
-        <div className="space-y-4">
+      <ScrollArea className="flex-1 px-1 sm:px-4 py-2 sm:py-4 w-full max-w-full overflow-x-hidden">
+        <div className="space-y-3 sm:space-y-4">
           {messages.map(message => (
             <Message
               key={message.id}
@@ -224,10 +224,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId }) => {
       </ScrollArea>
       
       {/* Message input */}
-      <MessageInput 
-        onSendMessage={handleSendMessage} 
-        disabled={sendMessageMutation.isPending}
-      />
+      <div className="px-1 sm:px-4 pb-2 sm:pb-4 w-full max-w-full">
+        <MessageInput 
+          onSendMessage={handleSendMessage} 
+          disabled={sendMessageMutation.isPending}
+        />
+      </div>
     </div>
   );
 };

@@ -31,6 +31,7 @@ export interface Message {
   };
   isFirst?: boolean;
   isConsecutive?: boolean;
+  type?: string;
 }
 
 export async function getChats(userId: string): Promise<Chat[]> {

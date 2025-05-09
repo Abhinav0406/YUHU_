@@ -12,119 +12,80 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, UserPlus, Check, X } from 'lucide-react';
-import { getFriends } from '../services/friendService';
-
-// Mock data - in a real app this would come from an API or database
-const mockFriends = [
-  {
-    id: '1',
-    name: 'Sarah Johnson',
-    username: 'sarahj',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Sarah',
-    status: 'online',
-  },
-  {
-    id: '2',
-    name: 'Michael Chen',
-    username: 'mikechen',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Michael',
-    status: 'online',
-  },
-  {
-    id: '3',
-    name: 'James Smith',
-    username: 'jsmith',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=James',
-    status: 'away',
-  },
-  {
-    id: '4',
-    name: 'Priya Patel',
-    username: 'ppatel',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Priya',
-    status: 'offline',
-  },
-  {
-    id: '5',
-    name: 'Jordan Taylor',
-    username: 'jtaylor',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jordan',
-    status: 'offline',
-  },
-];
-
-const mockPending = [
-  {
-    id: '6',
-    name: 'Alex Rodriguez',
-    username: 'alexr',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Alex',
-    type: 'incoming',
-  },
-  {
-    id: '7',
-    name: 'Taylor Wong',
-    username: 'twong',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Taylor',
-    type: 'outgoing',
-  },
-];
-
-const mockSuggestions = [
-  {
-    id: '8',
-    name: 'Jamie Garcia',
-    username: 'jgarcia',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Jamie',
-    mutualFriends: 3,
-  },
-  {
-    id: '9',
-    name: 'Morgan Jones',
-    username: 'mjones',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Morgan',
-    mutualFriends: 2,
-  },
-  {
-    id: '10',
-    name: 'Casey Kim',
-    username: 'ckim',
-    avatar: 'https://api.dicebear.com/7.x/avataaars/svg?seed=Casey',
-    mutualFriends: 1,
-  },
-];
-
-interface Friend {
-  user1_email: string;
-  user2_email: string;
-}
+import { getFriends, getPendingRequests, fetchAllUsersExceptCurrent, respondToFriendRequest } from '../services/friendService';
+import { supabase } from '@/lib/supabase';
 
 const FriendsList: React.FC<{ userEmail: string; onStartChat: (friendEmail: string) => void }> = ({ userEmail, onStartChat }) => {
-  const [friends, setFriends] = useState<Friend[]>([]);
+  const [friends, setFriends] = useState<any[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<any[]>([]);
+  const [suggestions, setSuggestions] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState('');
-  
-  useEffect(() => {
-    const fetchFriends = async () => {
-      const friendsList = await getFriends(userEmail);
-      setFriends(friendsList);
-    };
+  const [loading, setLoading] = useState(true);
 
-    fetchFriends();
+  // Fetch friends
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true);
+      // 1. Fetch friends
+      const friendsList = await getFriends(userEmail);
+      // 2. Fetch profiles for each friend
+      const friendEmails = friendsList.map(f => f.user1_email === userEmail ? f.user2_email : f.user1_email);
+      let profiles = [];
+      if (friendEmails.length > 0) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, username, email, avatar_url')
+          .in('email', friendEmails);
+        profiles = data || [];
+      }
+      setFriends(profiles);
+      setLoading(false);
+    };
+    fetchData();
   }, [userEmail]);
 
-  const filteredFriends = mockFriends.filter(friend => 
-    friend.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-    friend.username.toLowerCase().includes(searchQuery.toLowerCase())
-  );
+  // Fetch pending requests
+  useEffect(() => {
+    const fetchRequests = async () => {
+      const requests = await getPendingRequests(userEmail);
+      // Fetch sender profiles
+      const senderEmails = requests.map(r => r.sender_email);
+      let profiles = [];
+      if (senderEmails.length > 0) {
+        const { data } = await supabase
+          .from('profiles')
+          .select('id, username, email, avatar_url')
+          .in('email', senderEmails);
+        profiles = data || [];
+      }
+      // Attach profile to each request
+      const requestsWithProfiles = requests.map(r => ({
+        ...r,
+        profile: profiles.find(p => p.email === r.sender_email)
+      }));
+      setPendingRequests(requestsWithProfiles);
+    };
+    fetchRequests();
+  }, [userEmail]);
 
-  const getStatusClass = (status: string) => {
-    switch (status) {
-      case 'online': return 'bg-green-500';
-      case 'away': return 'bg-yellow-500';
-      case 'offline': return 'bg-gray-500';
-      default: return 'bg-gray-500';
-    }
-  };
+  // Fetch suggestions
+  useEffect(() => {
+    const fetchSuggestions = async () => {
+      // All users except current
+      const allUsers = await fetchAllUsersExceptCurrent(userEmail);
+      // Remove users who are already friends or have pending requests
+      const friendEmails = friends.map(f => f.email);
+      const pendingEmails = pendingRequests.map(r => r.sender_email);
+      const suggestions = allUsers.filter(u => !friendEmails.includes(u.email) && !pendingEmails.includes(u.email));
+      setSuggestions(suggestions);
+    };
+    fetchSuggestions();
+  }, [userEmail, friends, pendingRequests]);
+
+  const filteredFriends = friends.filter(friend => 
+    friend.username?.toLowerCase().includes(searchQuery.toLowerCase()) ||
+    friend.email?.toLowerCase().includes(searchQuery.toLowerCase())
+  );
 
   return (
     <Card className="max-w-3xl mx-auto">
@@ -142,7 +103,6 @@ const FriendsList: React.FC<{ userEmail: string; onStartChat: (friendEmail: stri
             <TabsTrigger value="requests">Requests</TabsTrigger>
             <TabsTrigger value="suggestions">Suggestions</TabsTrigger>
           </TabsList>
-          
           {/* Friends Tab */}
           <TabsContent value="friends">
             <div className="relative mb-4">
@@ -154,31 +114,25 @@ const FriendsList: React.FC<{ userEmail: string; onStartChat: (friendEmail: stri
                 onChange={(e) => setSearchQuery(e.target.value)}
               />
             </div>
-            
             <ScrollArea className="h-[400px] pr-4">
               {filteredFriends.length > 0 ? (
                 <div className="space-y-2">
                   {filteredFriends.map(friend => (
                     <div 
-                      key={friend.id} 
+                      key={friend.email} 
                       className="flex items-center justify-between p-3 rounded-lg hover:bg-muted transition-colors"
                     >
                       <div className="flex items-center">
-                        <div className="relative">
-                          <Avatar className="h-10 w-10">
-                            <AvatarImage src={friend.avatar} alt={friend.name} />
-                            <AvatarFallback>{friend.name[0]}</AvatarFallback>
-                          </Avatar>
-                          <span 
-                            className={`absolute bottom-0 right-0 w-3 h-3 ${getStatusClass(friend.status)} rounded-full border-2 border-white`}
-                          />
-                        </div>
+                        <Avatar className="h-10 w-10">
+                          <AvatarImage src={friend.avatar_url} alt={friend.username} />
+                          <AvatarFallback>{friend.username?.[0]}</AvatarFallback>
+                        </Avatar>
                         <div className="ml-3">
-                          <div className="text-sm font-medium">{friend.name}</div>
-                          <div className="text-xs text-muted-foreground">@{friend.username}</div>
+                          <div className="text-sm font-medium">{friend.username}</div>
+                          <div className="text-xs text-muted-foreground">{friend.email}</div>
                         </div>
                       </div>
-                      <Button variant="ghost" size="sm">
+                      <Button variant="ghost" size="sm" onClick={() => onStartChat(friend.email)}>
                         Message
                       </Button>
                     </div>
@@ -191,50 +145,44 @@ const FriendsList: React.FC<{ userEmail: string; onStartChat: (friendEmail: stri
               )}
             </ScrollArea>
           </TabsContent>
-          
           {/* Requests Tab */}
           <TabsContent value="requests">
-            {mockPending.length > 0 ? (
+            {pendingRequests.length > 0 ? (
               <div className="space-y-4">
-                {mockPending.map(request => (
+                {pendingRequests.map(request => (
                   <div 
                     key={request.id}
                     className="flex items-center justify-between p-3 rounded-lg border"
                   >
                     <div className="flex items-center">
                       <Avatar className="h-10 w-10">
-                        <AvatarImage src={request.avatar} alt={request.name} />
-                        <AvatarFallback>{request.name[0]}</AvatarFallback>
+                        <AvatarImage src={request.profile?.avatar_url} alt={request.profile?.username} />
+                        <AvatarFallback>{request.profile?.username?.[0]}</AvatarFallback>
                       </Avatar>
                       <div className="ml-3">
-                        <div className="text-sm font-medium">{request.name}</div>
-                        <div className="text-xs text-muted-foreground">@{request.username}</div>
+                        <div className="text-sm font-medium">{request.profile?.username}</div>
+                        <div className="text-xs text-muted-foreground">{request.profile?.email}</div>
                       </div>
                     </div>
-                    
-                    {request.type === 'incoming' ? (
-                      <div className="flex items-center space-x-2">
-                        <Button 
-                          variant="outline" 
-                          size="sm" 
-                          className="h-8 w-8 p-0 text-red-500"
-                        >
-                          <X className="h-4 w-4" />
-                          <span className="sr-only">Reject</span>
-                        </Button>
-                        <Button 
-                          size="sm" 
-                          className="h-8 w-8 p-0 bg-yuhu-primary hover:bg-yuhu-dark"
-                        >
-                          <Check className="h-4 w-4" />
-                          <span className="sr-only">Accept</span>
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="text-sm text-muted-foreground">
-                        Request sent
-                      </div>
-                    )}
+                    <div className="flex items-center space-x-2">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        className="h-8 w-8 p-0 text-red-500"
+                        onClick={async () => await respondToFriendRequest(request.id, 'rejected')}
+                      >
+                        <X className="h-4 w-4" />
+                        <span className="sr-only">Reject</span>
+                      </Button>
+                      <Button 
+                        size="sm" 
+                        className="h-8 w-8 p-0 bg-yuhu-primary hover:bg-yuhu-dark"
+                        onClick={async () => await respondToFriendRequest(request.id, 'accepted')}
+                      >
+                        <Check className="h-4 w-4" />
+                        <span className="sr-only">Accept</span>
+                      </Button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -244,43 +192,33 @@ const FriendsList: React.FC<{ userEmail: string; onStartChat: (friendEmail: stri
               </div>
             )}
           </TabsContent>
-          
           {/* Suggestions Tab */}
           <TabsContent value="suggestions">
             <div className="space-y-3">
-              {mockSuggestions.map(suggestion => (
+              {suggestions.length > 0 ? suggestions.map(suggestion => (
                 <div 
-                  key={suggestion.id}
+                  key={suggestion.email}
                   className="flex items-center justify-between p-3 rounded-lg border"
                 >
                   <div className="flex items-center">
                     <Avatar className="h-10 w-10">
-                      <AvatarImage src={suggestion.avatar} alt={suggestion.name} />
-                      <AvatarFallback>{suggestion.name[0]}</AvatarFallback>
+                      <AvatarImage src={suggestion.avatar_url} alt={suggestion.username} />
+                      <AvatarFallback>{suggestion.username?.[0]}</AvatarFallback>
                     </Avatar>
                     <div className="ml-3">
-                      <div className="text-sm font-medium">{suggestion.name}</div>
-                      <div className="text-xs text-muted-foreground">
-                        {suggestion.mutualFriends} mutual friends
-                      </div>
+                      <div className="text-sm font-medium">{suggestion.username}</div>
+                      <div className="text-xs text-muted-foreground">{suggestion.email}</div>
                     </div>
                   </div>
-                  <Button 
-                    variant="outline" 
-                    size="sm" 
-                    className="space-x-1"
-                  >
-                    <UserPlus className="h-4 w-4" />
-                    <span>Add</span>
+                  <Button variant="outline" size="sm" onClick={async () => await supabase.from('friend_requests').insert([{ sender_email: userEmail, receiver_email: suggestion.email, status: 'pending' }])}>
+                    <UserPlus className="h-4 w-4 mr-1" /> Add
                   </Button>
                 </div>
-              ))}
-              
-              <div className="text-center pt-3">
-                <Button variant="link" className="text-yuhu-primary">
-                  View More Suggestions
-                </Button>
-              </div>
+              )) : (
+                <div className="text-center py-8 text-muted-foreground">
+                  No suggestions available
+                </div>
+              )}
             </div>
           </TabsContent>
         </Tabs>

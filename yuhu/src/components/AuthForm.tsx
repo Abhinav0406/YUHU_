@@ -136,23 +136,23 @@ const AuthForm = () => {
 
   return (
     <Tabs defaultValue="login" className="w-full max-w-md">
-      <TabsList className="grid w-full grid-cols-2">
-        <TabsTrigger value="login">Login</TabsTrigger>
-        <TabsTrigger value="register">Sign Up</TabsTrigger>
+      <TabsList className="grid w-full grid-cols-2 bg-zinc-800 text-zinc-200">
+        <TabsTrigger value="login" className="data-[state=active]:bg-zinc-900 data-[state=active]:text-white">Login</TabsTrigger>
+        <TabsTrigger value="register" className="data-[state=active]:bg-zinc-900 data-[state=active]:text-white">Sign Up</TabsTrigger>
       </TabsList>
       
       <TabsContent value="login">
-        <Card>
+        <Card className="bg-zinc-900 text-zinc-100 border-zinc-800">
           <CardHeader>
-            <CardTitle>Login</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-white">Login</CardTitle>
+            <CardDescription className="text-zinc-400">
               Welcome back! Enter your credentials to access your account.
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleLogin}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="email">Email</Label>
+                <Label htmlFor="email" className="text-zinc-300">Email</Label>
                 <Input 
                   id="email" 
                   type="email" 
@@ -160,11 +160,12 @@ const AuthForm = () => {
                   value={loginEmail}
                   onChange={(e) => setLoginEmail(e.target.value)}
                   required
+                  className="bg-zinc-800 text-zinc-100 border-zinc-700 placeholder-zinc-500 focus-visible:ring-yuhu-primary"
                 />
               </div>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <Label htmlFor="password">Password</Label>
+                  <Label htmlFor="password" className="text-zinc-300">Password</Label>
                   <Button 
                     variant="link" 
                     className="text-xs text-yuhu-primary p-0 h-auto"
@@ -180,13 +181,14 @@ const AuthForm = () => {
                   value={loginPassword}
                   onChange={(e) => setLoginPassword(e.target.value)}
                   required
+                  className="bg-zinc-800 text-zinc-100 border-zinc-700 placeholder-zinc-500 focus-visible:ring-yuhu-primary"
                 />
               </div>
             </CardContent>
             <CardFooter>
               <Button 
                 type="submit" 
-                className="w-full bg-yuhu-primary hover:bg-yuhu-dark"
+                className="w-full bg-yuhu-primary hover:bg-yuhu-dark text-white"
                 disabled={isLoading}
               >
                 {isLoading ? (
@@ -201,17 +203,17 @@ const AuthForm = () => {
       </TabsContent>
       
       <TabsContent value="register">
-        <Card>
+        <Card className="bg-zinc-900 text-zinc-100 border-zinc-800">
           <CardHeader>
-            <CardTitle>Create an account</CardTitle>
-            <CardDescription>
+            <CardTitle className="text-white">Create an account</CardTitle>
+            <CardDescription className="text-zinc-400">
               Join Yuhu and connect with your campus community.
             </CardDescription>
           </CardHeader>
           <form onSubmit={handleRegister}>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="register-email">Email</Label>
+                <Label htmlFor="register-email" className="text-zinc-300">Email</Label>
                 <Input 
                   id="register-email" 
                   type="email" 
@@ -219,10 +221,11 @@ const AuthForm = () => {
                   value={registerEmail}
                   onChange={(e) => setRegisterEmail(e.target.value)}
                   required
+                  className="bg-zinc-800 text-zinc-100 border-zinc-700 placeholder-zinc-500 focus-visible:ring-yuhu-primary"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="username">Username</Label>
+                <Label htmlFor="username" className="text-zinc-300">Username</Label>
                 <Input 
                   id="username" 
                   type="text" 
@@ -230,10 +233,11 @@ const AuthForm = () => {
                   value={registerUsername}
                   onChange={(e) => setRegisterUsername(e.target.value)}
                   required
+                  className="bg-zinc-800 text-zinc-100 border-zinc-700 placeholder-zinc-500 focus-visible:ring-yuhu-primary"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="register-password">Password</Label>
+                <Label htmlFor="register-password" className="text-zinc-300">Password</Label>
                 <Input 
                   id="register-password" 
                   type="password" 
@@ -241,10 +245,11 @@ const AuthForm = () => {
                   value={registerPassword}
                   onChange={(e) => setRegisterPassword(e.target.value)}
                   required
+                  className="bg-zinc-800 text-zinc-100 border-zinc-700 placeholder-zinc-500 focus-visible:ring-yuhu-primary"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="confirm-password">Confirm Password</Label>
+                <Label htmlFor="confirm-password" className="text-zinc-300">Confirm Password</Label>
                 <Input 
                   id="confirm-password" 
                   type="password" 
@@ -252,9 +257,10 @@ const AuthForm = () => {
                   value={registerConfirmPassword}
                   onChange={(e) => setRegisterConfirmPassword(e.target.value)}
                   required
+                  className="bg-zinc-800 text-zinc-100 border-zinc-700 placeholder-zinc-500 focus-visible:ring-yuhu-primary"
                 />
               </div>
-              <div className="text-xs text-muted-foreground">
+              <div className="text-xs text-zinc-400">
                 By registering, you agree to our{" "}
                 <a href="#" className="text-yuhu-primary hover:underline">
                   Terms of Service
@@ -269,7 +275,7 @@ const AuthForm = () => {
             <CardFooter>
               <Button 
                 type="submit" 
-                className="w-full bg-yuhu-primary hover:bg-yuhu-dark"
+                className="w-full bg-yuhu-primary hover:bg-yuhu-dark text-white"
                 disabled={isLoading}
               >
                 {isLoading ? (
