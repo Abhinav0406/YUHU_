@@ -71,7 +71,7 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
           </button>
         )}
         <Link to={isAuthenticated ? "/chat" : "/"} className="flex items-center">
-          <img src="/images/logo2.webp" alt="Yuhu Logo" className="h-8 w-8 mr-2" />
+          <img src="/images/Logo2.png" alt="Yuhu Logo" className="h-8 w-8 mr-2" />
           <h1 className="text-xl sm:text-2xl font-bold">Yuhu</h1>
         </Link>
       </div>
