@@ -144,9 +144,14 @@ const Chat = () => {
               Loading chat...
             </div>
           ) : selectedUser && selectedChatId ? (
-            <ChatWindow chatId={selectedChatId} />
+            <ChatWindow chatId={selectedChatId} onClose={() => {}} />
           ) : (
-            <div className="flex-1 flex items-center justify-center text-zinc-500 bg-zinc-900">
+            <div
+              className="flex-1 flex items-center justify-center text-zinc-500 bg-zinc-900 cursor-pointer select-none"
+              onClick={() => {
+                if (window.innerWidth < 768) setSidebarOpen(true);
+              }}
+            >
               Select a user to start chatting.
             </div>
           )}
