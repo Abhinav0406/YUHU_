@@ -1,22 +1,35 @@
 import { supabase } from '@/lib/supabase';
 
 // Function to send a friend request
-export const sendFriendRequest = async (senderEmail: string, receiverEmail: string) => {
-  try {
-    const { data, error } = await supabase
-      .from('friend_requests')
-      .insert([{ sender_email: senderEmail, receiver_email: receiverEmail, status: 'pending' }]);
+export async function sendFriendRequest(senderEmail: string, receiverEmail: string) {
+  // Check if a friend request already exists
+  const { data: existingRequest, error: checkError } = await supabase
+    .from('friend_requests')
+    .select('*')
+    .or(`and(sender_email.eq.${senderEmail},receiver_email.eq.${receiverEmail}),and(sender_email.eq.${receiverEmail},receiver_email.eq.${senderEmail})`)
+    .maybeSingle();
 
-    if (error) {
-      throw new Error(error.message);
-    }
-
-    return data;
-  } catch (err) {
-    console.error('Error sending friend request:', err);
-    throw err;
+  if (checkError) {
+    throw new Error(`Error checking existing friend request: ${checkError.message}`);
   }
-};
+
+  if (existingRequest) {
+    throw new Error('A friend request already exists between these users.');
+  }
+
+  const { data, error } = await supabase
+    .from('friend_requests')
+    .insert([
+      { sender_email: senderEmail, receiver_email: receiverEmail, status: 'pending' }
+    ])
+    .select();
+
+  if (error) {
+    throw new Error(`Error sending friend request: ${error.message}`);
+  }
+
+  return data;
+}
 
 // Function to view pending friend requests
 export const getPendingRequests = async (userEmail: string) => {
@@ -109,7 +122,7 @@ export const subscribeToFriendRequests = (callback: (request: { id: string; send
 export async function fetchAllUsersExceptCurrent(currentUserEmail) {
   const { data, error } = await supabase
     .from('profiles')
-    .select('id, username, email, avatar')
+    .select('id, username, email, avatar_url')
     .neq('email', currentUserEmail);
 
   if (error) {

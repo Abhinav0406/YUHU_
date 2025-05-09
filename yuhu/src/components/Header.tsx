@@ -11,7 +11,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { MessageSquare, User, Settings, LogOut, UserPlus } from 'lucide-react';
 import { Dialog, DialogTrigger, DialogContent } from '@/components/ui/dialog';
-import UserExplorer from './UserExplorer';
+import UserExplorerTabs from './UserExplorer';
 
 const Header: React.FC = () => {
   const { user, profile, isAuthenticated, logout } = useAuth();
@@ -74,7 +74,7 @@ const Header: React.FC = () => {
               </Button>
             </DialogTrigger>
             <DialogContent className="max-w-lg w-full">
-              <UserExplorer />
+              <UserExplorerTabs />
             </DialogContent>
           </Dialog>
           <DropdownMenu>

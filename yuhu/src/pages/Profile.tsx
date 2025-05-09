@@ -3,7 +3,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import Layout from '@/components/Layout';
 import UserProfile from '@/components/UserProfile';
 import FriendsList from '@/components/FriendsList';
-import UserExplorer from '../components/UserExplorer';
 import { useAuth } from '@/context/AuthContext';
 import { useNavigate } from 'react-router-dom';
 
@@ -58,11 +57,6 @@ const Profile = () => {
             )}
           </TabsContent>
         </Tabs>
-
-        {/* Add the UserExplorer component to display other users */}
-        <div className="mt-6">
-          <UserExplorer />
-        </div>
       </div>
     </Layout>
   );

@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import UserList from '../components/UserList';
-import FriendRequests from '../components/FriendRequests';
 import { Input } from '@/components/ui/input';
 import { Search } from 'lucide-react';
 import { getFriends } from '../services/friendService';
@@ -86,7 +85,6 @@ const Chat = () => {
                 onChange={e => setSearch(e.target.value)}
               />
             </div>
-            <FriendRequests userEmail={userEmail} />
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2">
             {loading ? (

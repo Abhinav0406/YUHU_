@@ -1,5 +1,6 @@
 import { supabase } from '@/lib/supabase';
 import { Database } from '@/types/supabase';
+import { fetchAllUsersExceptCurrent } from './friendService';
 
 export type ChatType = 'direct' | 'group';
 
@@ -536,98 +537,79 @@ export function subscribeToMessages(userEmail, friendEmail, callback) {
     .subscribe();
 }
 
-export async function getOrCreateDirectChatByEmail(userEmail: string, otherUserEmail: string): Promise<string | null> {
-  // First, get the user IDs from their emails
+export async function getOrCreateDirectChatByEmail(currentUserEmail: string, otherUserEmail: string) {
+  const emails = [currentUserEmail.trim().toLowerCase(), otherUserEmail.trim().toLowerCase()];
   const { data: users, error: usersError } = await supabase
     .from('profiles')
     .select('id, email')
-    .in('email', [userEmail, otherUserEmail]);
+    .in('email', emails);
 
   if (usersError || !users || users.length !== 2) {
-    console.error('Error fetching users:', usersError);
-    return null;
+    console.error('User lookup failed:', { currentUserEmail, otherUserEmail, users });
+    throw new Error('Could not find both users');
   }
 
-  const userId = users.find(u => u.email === userEmail)?.id;
-  const otherUserId = users.find(u => u.email === otherUserEmail)?.id;
+  const currentUserId = users.find(u => u.email.toLowerCase() === currentUserEmail.trim().toLowerCase())?.id;
+  const otherUserId = users.find(u => u.email.toLowerCase() === otherUserEmail.trim().toLowerCase())?.id;
 
-  if (!userId || !otherUserId) {
-    console.error('Could not find both users');
-    return null;
-  }
-
-  // Check if a direct chat already exists between these users
-  const { data: existingChats, error: chatCheckError } = await supabase
+  // Find all chat IDs where current user is a participant
+  const { data: myChats, error: myChatsError } = await supabase
     .from('chat_participants')
     .select('chat_id')
-    .eq('profile_id', userId);
+    .eq('profile_id', currentUserId);
 
-  if (chatCheckError) {
-    console.error('Error checking existing chats:', chatCheckError);
-    return null;
+  if (myChatsError || !myChats) {
+    throw new Error('Could not fetch user chats');
   }
 
-  if (existingChats && existingChats.length > 0) {
-    const chatIds = existingChats.map(c => c.chat_id);
-    
-    const { data: otherParticipations, error: otherPartError } = await supabase
-      .from('chat_participants')
-      .select('chat_id')
-      .eq('profile_id', otherUserId)
-      .in('chat_id', chatIds);
+  const chatIds = myChats.map(c => c.chat_id);
 
-    if (!otherPartError && otherParticipations && otherParticipations.length > 0) {
-      // Check if this is a direct chat (has exactly 2 participants)
-      for (const participation of otherParticipations) {
-        const { count, error: countError } = await supabase
-          .from('chat_participants')
-          .select('*', { count: 'exact', head: true })
-          .eq('chat_id', participation.chat_id);
-        
-        if (!countError && count === 2) {
-          // This is a direct chat between these users
-          const { data: chatData } = await supabase
-            .from('chats')
-            .select('type')
-            .eq('id', participation.chat_id)
-            .single();
-          
-          if (chatData && chatData.type === 'direct') {
-            return participation.chat_id;
-          }
-        }
-      }
+  // Find chats where the other user is also a participant
+  const { data: sharedChats, error: sharedChatsError } = await supabase
+    .from('chat_participants')
+    .select('chat_id')
+    .eq('profile_id', otherUserId)
+    .in('chat_id', chatIds);
+
+  if (sharedChatsError) {
+    throw new Error('Could not fetch shared chats');
+  }
+
+  // Check if any shared chat is of type 'direct'
+  for (const chat of sharedChats) {
+    const { data: chatData, error: chatError } = await supabase
+      .from('chats')
+      .select('id, type')
+      .eq('id', chat.chat_id)
+      .single();
+
+    if (!chatError && chatData && chatData.type === 'direct') {
+      return chatData.id; // always return the chat ID
     }
   }
 
-  // Create a new chat
-  const { data: newChat, error: createChatError } = await supabase
+  // If not found, create a new direct chat and add both users as participants
+  const { data: newChat, error: newChatError } = await supabase
     .from('chats')
-    .insert({
-      type: 'direct',
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString()
-    })
+    .insert({ type: 'direct' })
     .select()
     .single();
 
-  if (createChatError || !newChat) {
-    console.error('Error creating new chat:', createChatError);
-    return null;
+  if (newChatError || !newChat) {
+    throw new Error('Could not create new chat');
   }
 
   // Add both users as participants
-  const { error: participantsError } = await supabase
+  const { error: addParticipantsError } = await supabase
     .from('chat_participants')
     .insert([
-      { chat_id: newChat.id, profile_id: userId },
+      { chat_id: newChat.id, profile_id: currentUserId },
       { chat_id: newChat.id, profile_id: otherUserId }
     ]);
 
-  if (participantsError) {
-    console.error('Error adding participants:', participantsError);
-    return null;
+  if (addParticipantsError) {
+    throw new Error('Could not add participants to chat');
   }
 
-  return newChat.id;
+  return newChat.id; // always return the chat ID
 }
