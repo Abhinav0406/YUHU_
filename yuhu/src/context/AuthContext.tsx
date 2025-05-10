@@ -38,6 +38,13 @@ const AuthContext = createContext<AuthContextType>({
 
 export const useAuth = () => useContext(AuthContext);
 
+export class AuthError extends Error {
+  constructor(message: string, public code?: string) {
+    super(message);
+    this.name = 'AuthError';
+  }
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -47,7 +54,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   useEffect(() => {
     const fetchSession = async () => {
       try {
-        const { data: { session } } = await supabase.auth.getSession();
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        
+        if (sessionError) {
+          throw new AuthError(sessionError.message, sessionError.status?.toString());
+        }
+        
         handleSession(session);
         
         // Listen for auth changes
@@ -63,6 +75,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       } catch (error) {
         console.error('Error setting up auth subscription:', error);
+        if (error instanceof AuthError) {
+          throw error;
+        }
+        throw new AuthError('Failed to initialize authentication');
       } finally {
         setLoading(false);
       }
@@ -103,8 +119,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               .single();
 
             if (createError) {
-              console.error('Error creating profile:', createError);
-              return;
+              throw new AuthError(`Error creating profile: ${createError.message}`, createError.code);
             }
 
             if (newProfile) {
@@ -121,7 +136,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               });
             }
           } else {
-            console.error('Error fetching profile:', error);
+            throw new AuthError(`Error fetching profile: ${error.message}`, error.code);
           }
         } else if (data) {
           setProfile({
@@ -138,6 +153,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       } catch (err) {
         console.error('Error in handleSession:', err);
+        if (err instanceof AuthError) {
+          throw err;
+        }
+        throw new AuthError('Failed to handle authentication session');
       }
     } else {
       setUser(null);
@@ -146,6 +165,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   };
 
   const login = async (email: string, password: string): Promise<boolean> => {
+    if (!email || !password) {
+      throw new AuthError('Email and password are required');
+    }
+
     setLoading(true);
     try {
       const { data, error } = await supabase.auth.signInWithPassword({ 
@@ -154,20 +177,29 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        console.error('Login error:', error.message);
-        return false;
+        throw new AuthError(error.message, error.status?.toString());
       }
 
       return !!data.user;
     } catch (error) {
-      console.error('Login exception:', error);
-      return false;
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Failed to login');
     } finally {
       setLoading(false);
     }
   };
 
   const register = async (email: string, username: string, password: string): Promise<string | true> => {
+    if (!email || !username || !password) {
+      throw new AuthError('Email, username, and password are required');
+    }
+
+    if (password.length < 6) {
+      throw new AuthError('Password must be at least 6 characters long');
+    }
+
     setLoading(true);
     let createdUserId: string | null = null;
     try {
@@ -184,13 +216,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       if (error) {
         if (error.message && error.message.toLowerCase().includes('email')) {
-          return 'Email already registered.';
+          throw new AuthError('Email already registered', 'EMAIL_EXISTS');
         }
-        return error.message || 'Registration failed.';
+        throw new AuthError(error.message, error.status?.toString());
       }
 
       if (!data.user) {
-        return 'Registration failed.';
+        throw new AuthError('Registration failed');
       }
       createdUserId = data.user.id;
 
@@ -202,11 +234,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .limit(1);
 
       if (checkError) {
-        return 'An error occurred while checking username.';
+        throw new AuthError(`Error checking username: ${checkError.message}`, checkError.code);
       }
 
       if (existingUsers && existingUsers.length > 0) {
-        return 'Username already taken.';
+        throw new AuthError('Username already taken', 'USERNAME_EXISTS');
       }
 
       // Create profile record
@@ -224,11 +256,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         });
 
       if (profileError) {
-        return 'Error creating profile.';
+        throw new AuthError(`Error creating profile: ${profileError.message}`, profileError.code);
       }
       return true;
-    } catch (error: any) {
-      return error?.message || 'Registration exception.';
+    } catch (error) {
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Registration failed');
     } finally {
       setLoading(false);
     }
@@ -238,23 +273,36 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       // Update user status to offline
       if (user?.id) {
-        await supabase
+        const { error: updateError } = await supabase
           .from('profiles')
           .update({ status: 'offline' })
           .eq('id', user.id);
+
+        if (updateError) {
+          throw new AuthError(`Error updating status: ${updateError.message}`, updateError.code);
+        }
       }
       
       // Sign out
-      await supabase.auth.signOut();
+      const { error: signOutError } = await supabase.auth.signOut();
+      if (signOutError) {
+        throw new AuthError(`Error signing out: ${signOutError.message}`, signOutError.status?.toString());
+      }
+      
       setUser(null);
       setProfile(null);
     } catch (error) {
-      console.error('Logout error:', error);
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Failed to logout');
     }
   };
 
   const updateProfile = async (data: Partial<Profile>): Promise<boolean> => {
-    if (!user?.id) return false;
+    if (!user?.id) {
+      throw new AuthError('User must be logged in to update profile');
+    }
 
     try {
       // Transform data to match database schema
@@ -276,16 +324,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .eq('id', user.id);
 
       if (error) {
-        console.error('Error updating profile:', error);
-        return false;
+        throw new AuthError(`Error updating profile: ${error.message}`, error.code);
       }
 
       // Update local profile state
       setProfile(prev => prev ? { ...prev, ...data } : null);
       return true;
     } catch (error) {
-      console.error('Update profile exception:', error);
-      return false;
+      if (error instanceof AuthError) {
+        throw error;
+      }
+      throw new AuthError('Failed to update profile');
     }
   };
 

@@ -58,12 +58,18 @@ const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
             id: u.id,
             username: u.username,
             email: u.email,
-            avatar: u.avatar_url, // Map avatar_url to avatar
+            avatar: u.avatar_url,
           }));
           setUsers(mappedUsers);
           setError(null);
         } catch (error) {
-          setError('Failed to load users. Please try again later.');
+          const errorMessage = error instanceof Error ? error.message : 'Failed to load users';
+          setError(errorMessage);
+          toast({
+            title: "Error loading users",
+            description: errorMessage,
+            variant: "destructive"
+          });
         } finally {
           setLoading(false);
         }
@@ -82,7 +88,12 @@ const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
           const data = await getPendingRequests(user.email);
           setPendingRequests(data || []);
         } catch (error) {
-          // ignore for now
+          const errorMessage = error instanceof Error ? error.message : 'Failed to load pending requests';
+          toast({
+            title: "Error loading requests",
+            description: errorMessage,
+            variant: "destructive"
+          });
         } finally {
           setPendingLoading(false);
         }

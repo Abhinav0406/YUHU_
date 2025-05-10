@@ -4,6 +4,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
 import { Send, Paperclip, Smile, Loader2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
+import { toast } from '@/components/ui/use-toast';
 
 interface MessageInputProps {
   onSendMessage: (message: string | { type: string; content: string }) => void;
@@ -35,18 +36,49 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    setUploading(true);
-    const fileExt = file.name.split('.').pop();
-    const fileName = `${Date.now()}.${fileExt}`;
-    const { data, error } = await supabase.storage.from('chat-images').upload(fileName, file);
-    setUploading(false);
-    if (error) {
-      alert('Image upload failed');
+    
+    // Validate file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please select an image smaller than 5MB",
+        variant: "destructive"
+      });
       return;
     }
-    const url = supabase.storage.from('chat-images').getPublicUrl(fileName).data.publicUrl;
-    onSendMessage({ type: 'image', content: url });
-    if (fileInputRef.current) fileInputRef.current.value = '';
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid file type",
+        description: "Please select an image file",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setUploading(true);
+    try {
+      const fileExt = file.name.split('.').pop();
+      const fileName = `${Date.now()}.${fileExt}`;
+      const { data, error } = await supabase.storage.from('chat-images').upload(fileName, file);
+      
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      const { data: urlData } = supabase.storage.from('chat-images').getPublicUrl(fileName);
+      onSendMessage({ type: 'image', content: urlData.publicUrl });
+    } catch (error) {
+      toast({
+        title: "Upload failed",
+        description: error instanceof Error ? error.message : "Failed to upload image. Please try again.",
+        variant: "destructive"
+      });
+    } finally {
+      setUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   return (

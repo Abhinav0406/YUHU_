@@ -1,5 +1,4 @@
-
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/ui/button';
 import {
@@ -32,6 +31,7 @@ import { Edit, Save, Loader2 } from 'lucide-react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
+import { supabase } from '@/lib/supabase';
 
 // Define form schema
 const profileSchema = z.object({
@@ -50,6 +50,8 @@ const UserProfile = () => {
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [avatarUploading, setAvatarUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   // Initialize form with react-hook-form
   const form = useForm<ProfileFormValues>({
@@ -99,6 +101,90 @@ const UserProfile = () => {
     }
   };
 
+  // Avatar upload handler
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file size (max 2MB)
+    if (file.size > 2 * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: "Please select an image smaller than 2MB",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast({
+        title: "Invalid file type",
+        description: "Please select an image file",
+        variant: "destructive"
+      });
+      return;
+    }
+
+    setAvatarUploading(true);
+    try {
+      // Generate a unique file name
+      const fileExt = file.name.split('.').pop()?.toLowerCase();
+      if (!fileExt || !['jpg', 'jpeg', 'png', 'gif'].includes(fileExt)) {
+        throw new Error('Invalid file extension. Please use JPG, PNG, or GIF.');
+      }
+
+      if (!profile?.id) {
+        throw new Error('User profile not found. Please try logging in again.');
+      }
+
+      const fileName = `${profile.id}/${Date.now()}.${fileExt}`;
+      
+      // Upload file to Supabase storage
+      const { data, error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(fileName, file, {
+          cacheControl: '3600',
+          upsert: true,
+          contentType: file.type
+        });
+
+      if (uploadError) {
+        if (uploadError.message.includes('row-level security')) {
+          throw new Error('Permission denied. Please make sure you are logged in.');
+        }
+        throw new Error(uploadError.message);
+      }
+
+      // Get the public URL
+      const { data: { publicUrl } } = supabase.storage
+        .from('avatars')
+        .getPublicUrl(fileName);
+
+      // Update profile with new avatar URL
+      const success = await updateProfile({ avatar: publicUrl });
+      
+      if (success) {
+        toast({ 
+          title: 'Avatar updated', 
+          description: 'Your profile picture has been updated successfully.' 
+        });
+      } else {
+        throw new Error('Failed to update profile with new avatar');
+      }
+    } catch (err) {
+      console.error('Avatar upload error:', err);
+      toast({ 
+        title: 'Upload failed', 
+        description: err instanceof Error ? err.message : 'Could not upload avatar. Please try again.',
+        variant: 'destructive' 
+      });
+    } finally {
+      setAvatarUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
+
   return (
     <Card className="max-w-3xl mx-auto shadow-lg border-opacity-50 animate-fade-in">
       <CardHeader>
@@ -142,9 +228,29 @@ const UserProfile = () => {
                 </AvatarFallback>
               </Avatar>
               {isEditing && (
-                <Button type="button" variant="link" className="mt-2 text-yuhu-primary">
-                  Change avatar
-                </Button>
+                <>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    ref={fileInputRef}
+                    className="hidden"
+                    onChange={handleAvatarChange}
+                    disabled={avatarUploading}
+                  />
+                  <Button
+                    type="button"
+                    variant="link"
+                    className="mt-2 text-yuhu-primary"
+                    onClick={() => fileInputRef.current?.click()}
+                    disabled={avatarUploading}
+                  >
+                    {avatarUploading ? (
+                      <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</>
+                    ) : (
+                      <>Change avatar</>
+                    )}
+                  </Button>
+                </>
               )}
             </div>
 

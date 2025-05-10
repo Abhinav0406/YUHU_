@@ -1,7 +1,18 @@
 import { supabase } from '@/lib/supabase';
 
+export class FriendServiceError extends Error {
+  constructor(message: string, public code?: string) {
+    super(message);
+    this.name = 'FriendServiceError';
+  }
+}
+
 // Function to send a friend request
 export async function sendFriendRequest(senderEmail: string, receiverEmail: string) {
+  if (!senderEmail || !receiverEmail) {
+    throw new FriendServiceError('Sender and receiver emails are required');
+  }
+
   // Check if a friend request already exists
   const { data: existingRequest, error: checkError } = await supabase
     .from('friend_requests')
@@ -10,11 +21,11 @@ export async function sendFriendRequest(senderEmail: string, receiverEmail: stri
     .maybeSingle();
 
   if (checkError) {
-    throw new Error(`Error checking existing friend request: ${checkError.message}`);
+    throw new FriendServiceError(`Error checking existing friend request: ${checkError.message}`, checkError.code);
   }
 
   if (existingRequest) {
-    throw new Error('A friend request already exists between these users.');
+    throw new FriendServiceError('A friend request already exists between these users.', 'DUPLICATE_REQUEST');
   }
 
   const { data, error } = await supabase
@@ -25,7 +36,7 @@ export async function sendFriendRequest(senderEmail: string, receiverEmail: stri
     .select();
 
   if (error) {
-    throw new Error(`Error sending friend request: ${error.message}`);
+    throw new FriendServiceError(`Error sending friend request: ${error.message}`, error.code);
   }
 
   return data;
@@ -33,6 +44,10 @@ export async function sendFriendRequest(senderEmail: string, receiverEmail: stri
 
 // Function to view pending friend requests
 export const getPendingRequests = async (userEmail: string) => {
+  if (!userEmail) {
+    throw new FriendServiceError('User email is required');
+  }
+
   try {
     const { data, error } = await supabase
       .from('friend_requests')
@@ -41,18 +56,28 @@ export const getPendingRequests = async (userEmail: string) => {
       .eq('status', 'pending');
 
     if (error) {
-      throw new Error(error.message);
+      throw new FriendServiceError(error.message, error.code);
     }
 
     return data;
   } catch (err) {
-    console.error('Error fetching pending requests:', err);
-    throw err;
+    if (err instanceof FriendServiceError) {
+      throw err;
+    }
+    throw new FriendServiceError('Failed to fetch pending requests');
   }
 };
 
 // Function to accept or reject a friend request
 export const respondToFriendRequest = async (requestId: string, status: 'accepted' | 'rejected') => {
+  if (!requestId) {
+    throw new FriendServiceError('Request ID is required');
+  }
+
+  if (!['accepted', 'rejected'].includes(status)) {
+    throw new FriendServiceError('Invalid status. Must be either "accepted" or "rejected"');
+  }
+
   try {
     const { data, error } = await supabase
       .from('friend_requests')
@@ -60,7 +85,7 @@ export const respondToFriendRequest = async (requestId: string, status: 'accepte
       .eq('id', requestId);
 
     if (error) {
-      throw new Error(error.message);
+      throw new FriendServiceError(error.message, error.code);
     }
 
     if (status === 'accepted') {
@@ -71,21 +96,27 @@ export const respondToFriendRequest = async (requestId: string, status: 'accepte
         .single();
 
       if (requestError) {
-        throw new Error(requestError.message);
+        throw new FriendServiceError(requestError.message, requestError.code);
       }
 
-      await supabase
+      const { error: friendError } = await supabase
         .from('friends')
         .insert([
           { user1_email: requestData.sender_email, user2_email: requestData.receiver_email },
           { user1_email: requestData.receiver_email, user2_email: requestData.sender_email },
         ]);
+
+      if (friendError) {
+        throw new FriendServiceError(friendError.message, friendError.code);
+      }
     }
 
     return data;
   } catch (err) {
-    console.error('Error responding to friend request:', err);
-    throw err;
+    if (err instanceof FriendServiceError) {
+      throw err;
+    }
+    throw new FriendServiceError('Failed to respond to friend request');
   }
 };
 
