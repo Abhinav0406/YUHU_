@@ -38,13 +38,13 @@ Yuhu is a modern campus social platform that connects students and facilitates c
 ### Prerequisites
 
 - Node.js (v14 or higher)
-- npm or yarn
+- npm or pnpm
 
 ### Installation
 
 1. Clone the repository:
 ```bash
-git clone [repository-url]
+git clone https://github.com/Abhinav0406/YUHU_.git
 cd yuhu
 ```
 
@@ -52,17 +52,17 @@ cd yuhu
 ```bash
 npm install
 # or
-yarn install
+pnpm install
 ```
 
 3. Start the development server:
 ```bash
 npm run dev
 # or
-yarn dev
+pnpm run dev
 ```
 
-4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+4. Open [http://localhost:8080](http://localhost:8080) in your browser.
 
 ## Project Structure
 
@@ -86,9 +86,7 @@ yuhu/
 4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-## License
 
-This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Acknowledgments
 
