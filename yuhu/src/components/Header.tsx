@@ -160,68 +160,58 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
             </DropdownMenu>
           </div>
 
-          {/* Mobile Navigation */}
+          {/* Enhanced Mobile Navigation */}
           <div
             className={cn(
-              "fixed inset-0 bg-zinc-900 text-white z-40 transform transition-transform duration-300 ease-in-out md:hidden",
-              isMobileMenuOpen ? "translate-x-0" : "translate-x-full"
+              "fixed inset-0 z-50 flex md:hidden",
+              isMobileMenuOpen ? "backdrop-blur-md bg-black/40" : "pointer-events-none"
             )}
           >
-            <div className="flex flex-col h-full">
-              <div className="flex items-center justify-between p-4 border-b">
-                <h2 className="text-xl font-semibold">Menu</h2>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => setIsMobileMenuOpen(false)}
-                  aria-label="Close menu"
-                >
-                  <X className="h-6 w-6" />
-                </Button>
+            {/* Slide-in menu */}
+            <aside className={cn(
+              "relative w-4/5 max-w-xs h-full bg-zinc-900 shadow-2xl rounded-r-3xl p-6 flex flex-col transition-transform duration-300",
+              isMobileMenuOpen ? "translate-x-0" : "-translate-x-full"
+            )}>
+              {/* Profile */}
+              <div className="flex flex-col items-center mb-8">
+                <Avatar className="h-16 w-16 shadow-lg border-4 border-yuhu-primary mb-2" />
+                <div className="text-lg font-bold text-white">{profile?.fullName}</div>
+                <div className="text-sm text-yuhu-primary">@{profile?.username}</div>
               </div>
-              <nav className="flex-1 p-4 space-y-4">
-                <Button variant="ghost" className="w-full justify-start" asChild>
+              {/* Menu Items */}
+              <nav className="flex-1 flex flex-col gap-4">
+                <Button className="w-full py-3 rounded-xl bg-yuhu-primary/80 text-white hover:bg-yuhu-dark transition" asChild>
                   <Link to="/chat" onClick={() => setIsMobileMenuOpen(false)}>
                     <MessageSquare className="h-5 w-5 mr-2" />
-                    <span>Chats</span>
+                    Chats
                   </Link>
                 </Button>
-                <Button variant="ghost" className="w-full justify-start" asChild>
+                <Button className="w-full py-3 rounded-xl bg-zinc-800 text-white hover:bg-yuhu-primary/60 transition" asChild>
                   <Link to="/profile" onClick={() => setIsMobileMenuOpen(false)}>
                     <User className="h-5 w-5 mr-2" />
-                    <span>Profile</span>
+                    Profile
                   </Link>
                 </Button>
-                <Button variant="ghost" className="w-full justify-start" asChild>
+                <Button className="w-full py-3 rounded-xl bg-zinc-800 text-white hover:bg-yuhu-primary/60 transition" asChild>
                   <Link to="/settings" onClick={() => setIsMobileMenuOpen(false)}>
                     <Settings className="h-5 w-5 mr-2" />
-                    <span>Settings</span>
+                    Settings
                   </Link>
                 </Button>
-                <Dialog>
-                  <DialogTrigger asChild>
-                    <Button variant="ghost" className="w-full justify-start">
-                      <UserPlus className="h-5 w-5 mr-2" />
-                      <span>Add Friend</span>
-                    </Button>
-                  </DialogTrigger>
-                  <DialogContent className="max-w-lg w-full">
-                    <UserExplorerTabs />
-                  </DialogContent>
-                </Dialog>
-                <Button
-                  variant="ghost"
-                  className="w-full justify-start text-red-600"
-                  onClick={() => {
-                    handleLogout();
-                    setIsMobileMenuOpen(false);
-                  }}
-                >
+                <Button className="w-full py-3 rounded-xl bg-red-600 text-white mt-auto hover:bg-red-700 transition" onClick={handleLogout}>
                   <LogOut className="h-5 w-5 mr-2" />
-                  <span>Logout</span>
+                  Logout
                 </Button>
               </nav>
-            </div>
+              {/* Close button */}
+              <button
+                className="absolute top-4 right-4 text-white bg-black/30 rounded-full p-2"
+                onClick={() => setIsMobileMenuOpen(false)}
+                aria-label="Close menu"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </aside>
           </div>
         </>
       ) : (
