@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import Layout from '@/components/Layout';
@@ -10,8 +10,13 @@ const Index = () => {
   const { isAuthenticated } = useAuth();
   const navigate = useNavigate();
   
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate('/chat');
+    }
+  }, [isAuthenticated, navigate]);
+  
   if (isAuthenticated) {
-    navigate('/chat');
     return null;
   }
   
@@ -27,8 +32,11 @@ const Index = () => {
                 New! Study Buddy Matching
               </div>
             </div>
-            <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight text-white">
-              <span className="text-yuhu-primary">Yuhu:</span> Your Campus, <br />Connected
+            <h1 className="text-4xl md:text-5xl font-bold mb-6 leading-tight text-white flex items-center">
+              
+              <span className="text-yuhu-primary">Yuhu:</span>
+             
+              <span className="ml-2 block md:inline">Your Campus, <br className="md:hidden" />Connected</span>
             </h1>
             <p className="text-xl text-zinc-300 mb-8">
               The chat platform designed specifically for college students. Connect with classmates, form study groups, and keep up with campus events - all in one place.

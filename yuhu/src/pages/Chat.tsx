@@ -19,6 +19,20 @@ const Chat = () => {
   const [userEmail, setUserEmail] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
+  // Handle browser back button
+  useEffect(() => {
+    const handlePopState = () => {
+      if (window.innerWidth < 768 && selectedChatId) {
+        setSelectedChatId(null);
+        setSelectedUser(null);
+        setSidebarOpen(true);
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [selectedChatId]);
+
   useEffect(() => {
     const fetchUserEmail = async () => {
       const { data, error } = await supabase.auth.getUser();
@@ -68,6 +82,10 @@ const Chat = () => {
       const chatId = await getOrCreateDirectChatByEmail(userEmail, user.email);
       setSelectedUser(user);
       setSelectedChatId(chatId);
+      // Add to browser history when selecting a chat
+      if (window.innerWidth < 768) {
+        window.history.pushState({ chatId }, '');
+      }
     }
     setLoadingChat(false);
     setSidebarOpen(false); // Close sidebar on mobile after selecting
