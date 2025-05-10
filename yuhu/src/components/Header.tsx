@@ -24,6 +24,7 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [showAvatarModal, setShowAvatarModal] = useState(false);
 
   const handleLogout = () => {
     logout();
@@ -174,7 +175,10 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
             )}>
               {/* Profile */}
               <div className="flex flex-col items-center mb-8">
-                <Avatar className="h-16 w-16 shadow-lg border-4 border-yuhu-primary mb-2" />
+                <Avatar className="h-16 w-16 shadow-lg border-4 border-yuhu-primary mb-2 cursor-pointer" onClick={() => setShowAvatarModal(true)}>
+                  <AvatarImage src={profile?.avatar || ''} alt={profile?.username} />
+                  <AvatarFallback>{profile?.username ? getInitials(profile.username) : 'U'}</AvatarFallback>
+                </Avatar>
                 <div className="text-lg font-bold text-white">{profile?.fullName}</div>
                 <div className="text-sm text-yuhu-primary">@{profile?.username}</div>
               </div>
@@ -212,6 +216,17 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
                 <X className="h-6 w-6" />
               </button>
             </aside>
+            {/* Avatar Modal for mobile sidebar */}
+            <Dialog open={showAvatarModal} onOpenChange={setShowAvatarModal}>
+              <DialogContent className="flex items-center justify-center bg-black p-0 max-w-xs sm:max-w-md">
+                <img
+                  src={profile?.avatar || ''}
+                  alt="Profile"
+                  className="max-w-full max-h-[80vh] rounded-lg object-contain"
+                  style={{ background: '#222' }}
+                />
+              </DialogContent>
+            </Dialog>
           </div>
         </>
       ) : (

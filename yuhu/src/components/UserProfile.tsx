@@ -32,6 +32,7 @@ import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import * as z from 'zod';
 import { supabase } from '@/lib/supabase';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
 
 // Define form schema
 const profileSchema = z.object({
@@ -45,13 +46,18 @@ const profileSchema = z.object({
 
 type ProfileFormValues = z.infer<typeof profileSchema>;
 
+const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed=default';
+
 const UserProfile = () => {
-  const { profile, updateProfile } = useAuth();
+  const { profile, updateProfile, deleteProfile } = useAuth();
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [avatarUploading, setAvatarUploading] = useState(false);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [showDeletePhotoDialog, setShowDeletePhotoDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
   
   // Initialize form with react-hook-form
   const form = useForm<ProfileFormValues>({
@@ -185,6 +191,52 @@ const UserProfile = () => {
     }
   };
 
+  // Delete profile handler
+  const handleDeleteProfile = async () => {
+    setIsSubmitting(true);
+    try {
+      const success = await deleteProfile();
+      if (success) {
+        toast({ title: 'Profile deleted', description: 'Your profile has been deleted.' });
+      } else {
+        toast({ title: 'Delete failed', description: 'Could not delete your profile.', variant: 'destructive' });
+      }
+    } catch (err) {
+      toast({ title: 'Delete failed', description: 'An error occurred while deleting your profile.', variant: 'destructive' });
+    } finally {
+      setIsSubmitting(false);
+      setShowDeleteDialog(false);
+    }
+  };
+
+  // Delete profile photo handler
+  const handleDeletePhoto = async () => {
+    if (!profile?.avatar) return;
+    setIsDeletingPhoto(true);
+    try {
+      // Remove from Supabase Storage if not default
+      const url = profile.avatar;
+      if (!url.includes('dicebear.com')) {
+        const path = url.split('/avatars/')[1];
+        if (path) {
+          await supabase.storage.from('avatars').remove([path]);
+        }
+      }
+      // Set avatar to default
+      const success = await updateProfile({ avatar: DEFAULT_AVATAR });
+      if (success) {
+        toast({ title: 'Profile photo removed', description: 'Your profile photo has been reset to default.' });
+      } else {
+        toast({ title: 'Failed', description: 'Could not remove profile photo.', variant: 'destructive' });
+      }
+    } catch (err) {
+      toast({ title: 'Error', description: 'Could not remove profile photo.', variant: 'destructive' });
+    } finally {
+      setIsDeletingPhoto(false);
+      setShowDeletePhotoDialog(false);
+    }
+  };
+
   return (
     <Card className="max-w-3xl mx-auto shadow-lg border-opacity-50 animate-fade-in">
       <CardHeader>
@@ -227,6 +279,7 @@ const UserProfile = () => {
                   {profile?.username ? profile.username[0].toUpperCase() : 'U'}
                 </AvatarFallback>
               </Avatar>
+              {/* Change Avatar button (only when editing) */}
               {isEditing && (
                 <>
                   <input
@@ -247,11 +300,35 @@ const UserProfile = () => {
                     {avatarUploading ? (
                       <><Loader2 className="mr-2 h-4 w-4 animate-spin" />Uploading...</>
                     ) : (
-                      <>Change avatar</>
+                      <>Change Avatar</>
                     )}
                   </Button>
                 </>
               )}
+              {/* Delete Photo button (always if avatar exists) */}
+              {profile?.avatar && !avatarUploading && (
+                <Button
+                  type="button"
+                  variant="destructive"
+                  className="mt-2"
+                  onClick={() => setShowDeletePhotoDialog(true)}
+                  disabled={isDeletingPhoto}
+                >
+                  {isDeletingPhoto ? 'Deleting...' : 'Delete Photo'}
+                </Button>
+              )}
+              <Dialog open={showDeletePhotoDialog} onOpenChange={setShowDeletePhotoDialog}>
+                <DialogContent className="max-w-xs text-center">
+                  <h2 className="text-lg font-bold mb-2">Delete Profile Photo?</h2>
+                  <p className="mb-4">Are you sure you want to delete your profile photo? It will be reset to the default avatar.</p>
+                  <div className="flex justify-center gap-4">
+                    <Button variant="outline" onClick={() => setShowDeletePhotoDialog(false)} disabled={isDeletingPhoto}>Cancel</Button>
+                    <Button variant="destructive" onClick={handleDeletePhoto} disabled={isDeletingPhoto}>
+                      {isDeletingPhoto ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -421,6 +498,18 @@ const UserProfile = () => {
           </form>
         </Form>
       </CardContent>
+      <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
+        <DialogContent className="max-w-xs text-center">
+          <h2 className="text-lg font-bold mb-2">Delete Profile?</h2>
+          <p className="mb-4">Are you sure you want to delete your profile? This action cannot be undone.</p>
+          <div className="flex justify-center gap-4">
+            <Button variant="outline" onClick={() => setShowDeleteDialog(false)} disabled={isSubmitting}>Cancel</Button>
+            <Button variant="destructive" onClick={handleDeleteProfile} disabled={isSubmitting}>
+              {isSubmitting ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Delete'}
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 };

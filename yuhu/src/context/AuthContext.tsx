@@ -23,6 +23,7 @@ interface AuthContextType {
   logout: () => Promise<void>;
   loading: boolean;
   updateProfile: (data: Partial<Profile>) => Promise<boolean>;
+  deleteProfile: () => Promise<boolean>;
 }
 
 const AuthContext = createContext<AuthContextType>({
@@ -33,7 +34,8 @@ const AuthContext = createContext<AuthContextType>({
   register: async () => 'Registration failed.',
   logout: async () => {},
   loading: true,
-  updateProfile: async () => false
+  updateProfile: async () => false,
+  deleteProfile: async () => false
 });
 
 export const useAuth = () => useContext(AuthContext);
@@ -338,6 +340,25 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   };
 
+  const deleteProfile = async (): Promise<boolean> => {
+    if (!user?.id) return false;
+    try {
+      // Delete the profile row
+      const { error } = await supabase
+        .from('profiles')
+        .delete()
+        .eq('id', user.id);
+      if (error) throw error;
+      // Optionally: delete user from auth (requires service role key)
+      // await supabase.auth.admin.deleteUser(user.id);
+      await logout();
+      return true;
+    } catch (error) {
+      console.error('Error deleting profile:', error);
+      return false;
+    }
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -348,7 +369,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         register,
         logout,
         loading,
-        updateProfile
+        updateProfile,
+        deleteProfile
       }}
     >
       {children}
