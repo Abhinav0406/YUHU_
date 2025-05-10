@@ -12,13 +12,34 @@ interface UserExplorerPanelProps {
   panel: 'add' | 'pending';
 }
 
+interface User {
+  id: string;
+  username: string;
+  email: string;
+  avatar: string;
+}
+
+interface FriendRequest {
+  id: string;
+  sender_email: string;
+  receiver_email: string;
+  status: 'pending' | 'accepted' | 'rejected';
+}
+
+interface FetchedUser {
+  id: string;
+  username: string;
+  email: string;
+  avatar_url: string;
+}
+
 const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
   const { user } = useAuth();
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const [users, setUsers] = useState([]);
-  const [pendingRequests, setPendingRequests] = useState([]);
+  const [users, setUsers] = useState<User[]>([]);
+  const [pendingRequests, setPendingRequests] = useState<FriendRequest[]>([]);
   const [loading, setLoading] = useState(true);
   const [pendingLoading, setPendingLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,8 +53,14 @@ const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
       if (user?.email) {
         try {
           setLoading(true);
-          const fetchedUsers = await fetchAllUsersExceptCurrent(user.email);
-          setUsers(fetchedUsers);
+          const fetchedUsers: FetchedUser[] = await fetchAllUsersExceptCurrent(user.email);
+          const mappedUsers = fetchedUsers.map((u) => ({
+            id: u.id,
+            username: u.username,
+            email: u.email,
+            avatar: u.avatar_url, // Map avatar_url to avatar
+          }));
+          setUsers(mappedUsers);
           setError(null);
         } catch (error) {
           setError('Failed to load users. Please try again later.');
@@ -66,23 +93,23 @@ const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
 
   // Helper: check if a user has a pending outgoing request
   const isRequested = (email: string) => {
-    return pendingRequests.some((req: any) => req.sender_email === user?.email && req.receiver_email === email);
+    return pendingRequests.some((req) => req.sender_email === user?.email && req.receiver_email === email);
   };
 
   // Helper: check if a user is the sender of a pending request
-  const isIncoming = (req: any) => req.receiver_email === user?.email && req.status === 'pending';
-  const isOutgoing = (req: any) => req.sender_email === user?.email && req.status === 'pending';
+  const isIncoming = (req: FriendRequest) => req.receiver_email === user?.email && req.status === 'pending';
+  const isOutgoing = (req: FriendRequest) => req.sender_email === user?.email && req.status === 'pending';
 
   // Add friend handler
   const handleAddFriend = async (friendEmail: string) => {
     if (!user?.email) return;
     try {
-      setSendingRequests(prev => new Set(prev).add(friendEmail));
+      setSendingRequests((prev) => new Set(prev).add(friendEmail));
       await sendFriendRequest(user.email, friendEmail);
     } catch (error) {
       // Optionally show error
     } finally {
-      setSendingRequests(prev => {
+      setSendingRequests((prev) => {
         const newSet = new Set(prev);
         newSet.delete(friendEmail);
         return newSet;
@@ -98,7 +125,7 @@ const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
       await respondToFriendRequest(requestId, status);
       if (status === 'accepted') {
         // Find the request to get the sender's email
-        const request = pendingRequests.find((req: any) => req.id === requestId);
+        const request = pendingRequests.find((req) => req.id === requestId);
         if (request) {
           const otherUserEmail = request.sender_email;
           // Create a chat with the accepted friend
@@ -139,37 +166,30 @@ const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
     ) : users.length === 0 ? (
       <div className="text-center text-muted-foreground py-4">No other users found.</div>
     ) : (
-      <div className="space-y-4">
-        {users.map((u: any) => (
-          <div key={u.id} className="flex items-center justify-between p-3 rounded-lg border">
-            <div className="flex items-center space-x-3">
-              <Avatar className="h-10 w-10">
+      <div className="max-h-[calc(100vh-200px)] overflow-y-auto p-4 border rounded-lg shadow-md">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {users.map((u) => (
+            <div key={u.id} className="flex flex-col items-center p-4 rounded-lg border bg-white shadow-md hover:shadow-lg transition-shadow">
+              <Avatar className="h-16 w-16 mb-3">
                 <AvatarImage src={u.avatar} alt={u.username} />
                 <AvatarFallback>{u.username[0]}</AvatarFallback>
               </Avatar>
-              <div>
-                <div className="font-medium">{u.username}</div>
-                <div className="text-sm text-muted-foreground">{u.email}</div>
+              <div className="text-center w-full">
+                <div className="font-semibold text-lg truncate w-full" title={u.username}>{u.username}</div>
+                <div className="text-sm text-muted-foreground truncate w-full" title={u.email}>{u.email}</div>
               </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => handleAddFriend(u.email)}
+                disabled={sendingRequests.has(u.email) || isRequested(u.email)}
+                className="mt-3 w-full flex items-center justify-center bg-yuhu-primary text-white hover:bg-yuhu-dark disabled:bg-gray-300 disabled:text-gray-500"
+              >
+                <UserPlus className="h-5 w-5" />
+              </Button>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => handleAddFriend(u.email)}
-              disabled={sendingRequests.has(u.email) || isRequested(u.email)}
-              className="space-x-1"
-            >
-              <UserPlus className="h-4 w-4" />
-              <span>
-                {isRequested(u.email)
-                  ? 'Requested'
-                  : sendingRequests.has(u.email)
-                  ? 'Sending...'
-                  : 'Add Friend'}
-              </span>
-            </Button>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     );
   }
@@ -181,7 +201,7 @@ const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
     <div className="text-center text-muted-foreground py-4">No pending requests.</div>
   ) : (
     <div className="space-y-4">
-      {pendingRequests.map((req: any) => (
+      {pendingRequests.map((req) => (
         <div key={req.id} className="flex items-center justify-between p-3 rounded-lg border">
           <div className="flex items-center space-x-3">
             <Avatar className="h-10 w-10">
@@ -227,4 +247,4 @@ const UserExplorerPanel: React.FC<UserExplorerPanelProps> = ({ panel }) => {
   );
 };
 
-export default UserExplorerPanel; 
+export default UserExplorerPanel;
