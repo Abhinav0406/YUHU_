@@ -1,163 +1,96 @@
-# Yuhu Chat App
+# Yuhu - Your Campus, Connected
 
+Yuhu is a modern campus social platform that connects students and facilitates communication within educational institutions. Built with React, TypeScript, and modern web technologies, Yuhu provides a seamless experience for campus networking and communication.
 
+## Features
 
-## 📱 Overview
+- 🔐 **Authentication System**
+  - Secure login and signup
+  - User profile management
+  - Avatar support with fallback initials
 
-Yuhu is a vibrant, user-friendly chat application designed specifically for college students. Our mission is to create a seamless communication platform that enhances the college experience by connecting students with their friends and classmates in a fun, intuitive environment.
+- 💬 **Real-time Chat**
+  - Direct messaging
+  - User-friendly chat interface
+  - Online status indicators
 
-**Tagline:** "Shout out to your crew!"
+- 👥 **Social Features**
+  - Friend management
+  - User discovery
+  - Profile customization
 
-## ✨ Features
+- 🎨 **Modern UI/UX**
+  - Responsive design
+  - Dark mode support
+  - Mobile-friendly interface
+  - Intuitive navigation
 
-### Core Communication
-- **Private Messaging** - Smooth one-on-one conversations with friends
-- **Group Chats** - Create custom groups for classes, clubs, study sessions, and more
-- **Rich Media Sharing** - Easily share photos, videos, documents, and voice messages
-- **Read Receipts** - Know when your messages have been seen
+## Tech Stack
 
-### College-Specific Features
-- **Study Mode** - Set timed chat sessions that automatically disable notifications
-- **Class Groups** - Dedicated spaces for course discussions and materials
-- **Poll Creator** - Quick decision-making for group activities or study sessions
-- **File Exchange** - Share notes, assignments, and study materials with classmates
+- **Frontend Framework**: React with TypeScript
+- **Routing**: React Router
+- **UI Components**: Custom components with Tailwind CSS
+- **Icons**: Lucide Icons
+- **State Management**: React Context API
 
-### Unique "Lovable" Features
-- **Bump Feature** - Shake your phone to "bump" a conversation to the top of a friend's chat list
-- **Wave Button** - Quick way to say hi without typing a message
-- **Mood Music** - Share what you're listening to with a single tap
-- **Status Updates** - Let friends know if you're studying, free to hang, or busy
-- **Custom Themes** - Personalize your chat experience with various color schemes
-
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
-- Node.js (v14.0.0 or higher)
-- npm (v6.0.0 or higher)
-- Firebase account
-- React Native environment setup
+
+- Node.js (v14 or higher)
+- npm or yarn
 
 ### Installation
 
-1. Clone the repository
-   ```bash
-   git clone https://github.com/yourusername/yuhu-chat.git
-   cd yuhu-chat
-   ```
-
-2. Install dependencies
-   ```bash
-   npm install
-   ```
-
-3. Configure Firebase
-   - Create a Firebase project at [https://console.firebase.google.com/](https://console.firebase.google.com/)
-   - Enable Authentication, Firestore, and Storage
-   - Add your Firebase configuration to `src/config/firebase.js`
-
-4. Start the development server
-   ```bash
-   npm start
-   ```
-
-5. Run on a device or emulator
-   ```bash
-   # For iOS
-   npm run ios
-   
-   # For Android
-   npm run android
-   ```
-
-## 🧱 Project Structure
-
-```
-yuhu-chat/
-├── assets/                  # Images, fonts, and other static files
-├── src/
-│   ├── components/          # Reusable UI components
-│   ├── config/              # Configuration files
-│   ├── context/             # React context providers
-│   ├── hooks/               # Custom React hooks
-│   ├── navigation/          # Navigation configuration
-│   ├── screens/             # Application screens
-│   ├── services/            # API and service logic
-│   ├── utils/               # Utility functions
-│   └── App.js               # Main application component
-├── .gitignore
-├── app.json
-├── babel.config.js
-├── package.json
-└── README.md
-```
-
-## 💻 Technology Stack
-
-- **Frontend**: React Native
-- **State Management**: React Context API
-- **Backend**: Firebase
-  - Authentication
-  - Firestore (database)
-  - Cloud Storage
-  - Cloud Functions
-- **Notifications**: Firebase Cloud Messaging
-
-## 📝 Development Roadmap
-
-### Phase 1: MVP (Minimum Viable Product)
-- User authentication
-- Basic profile setup
-- Private messaging
-- Simple friend management
-
-### Phase 2: Core Features
-- Group chat functionality
-- Media sharing capabilities
-- Enhanced profile customization
-- Basic notifications
-
-### Phase 3: College-Specific Features
-- Study mode implementation
-- Class groups and file sharing
-- Poll creator
-- Status updates
-
-### Phase 4: Polish & Unique Features
-- UI refinements and animations
-- Bump feature and wave button
-- Custom themes
-- Mood music sharing
-
-## 🧪 Testing
-
-- **Unit Tests**: Jest
-- **Integration Tests**: React Native Testing Library
-- **E2E Tests**: Detox
-- **User Testing**: Conducted with college student focus groups
-
-Run tests with:
+1. Clone the repository:
 ```bash
-npm test
+git clone [repository-url]
+cd yuhu
 ```
 
-## 🤝 Contributing
+2. Install dependencies:
+```bash
+npm install
+# or
+yarn install
+```
 
-We welcome contributions from fellow students! If you'd like to contribute:
+3. Start the development server:
+```bash
+npm run dev
+# or
+yarn dev
+```
 
-1. Fork the project
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add some amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
+4. Open [http://localhost:3000](http://localhost:3000) in your browser.
+
+## Project Structure
+
+```
+yuhu/
+├── src/
+│   ├── components/     # Reusable UI components
+│   ├── context/       # React context providers
+│   ├── lib/          # Utility functions
+│   └── pages/        # Page components
+├── public/
+│   └── images/       # Static assets
+└── ...
+```
+
+## Contributing
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
+3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
+4. Push to the branch (`git push origin feature/AmazingFeature`)
 5. Open a Pull Request
 
-Please ensure your code follows our coding standards and includes appropriate tests.
+## License
 
-## 📞 Contact
+This project is licensed under the MIT License - see the LICENSE file for details.
 
-For questions or feedback about the project:
-- Email: indiralaabhinavchary@gmail.com
-- GitHub Issues: [https://github.com/yourusername](https://github.com/Abhinav0406)
+## Acknowledgments
 
----
-
-*Yuhu Chat App - Connecting college students, one message at a time*
+- Thanks to all contributors who have helped shape Yuhu
+- Special thanks to the open-source community for the amazing tools and libraries
