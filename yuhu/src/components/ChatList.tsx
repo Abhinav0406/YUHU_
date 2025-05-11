@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { motion, AnimatePresence } from 'framer-motion';
+import notificationSound from '@/assets/notification.mp3'; // Place a notification.mp3 in your assets folder
 
 interface ChatListProps {
   activeChatId?: string;
@@ -35,6 +36,8 @@ const ChatList: React.FC<ChatListProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [activeTab, setActiveTab] = useState('all');
   const [isSearchFocused, setIsSearchFocused] = useState(false);
+  const prevUnreadCounts = useRef<Record<string, number>>({});
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // Fetch chats using React Query
   const { 
@@ -58,6 +61,26 @@ const ChatList: React.FC<ChatListProps> = ({
     
     return matchesSearch && matchesTab;
   });
+
+  useEffect(() => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio(notificationSound);
+    }
+    filteredChats.forEach(chat => {
+      const prev = prevUnreadCounts.current[chat.id] || 0;
+      if (chat.unreadCount > prev && chat.id !== activeChatId) {
+        // Play sound
+        audioRef.current?.play();
+        // Add highlight class
+        const badge = document.getElementById(`chat-badge-${chat.id}`);
+        if (badge) {
+          badge.classList.add('animate-pulse');
+          setTimeout(() => badge.classList.remove('animate-pulse'), 1200);
+        }
+      }
+      prevUnreadCounts.current[chat.id] = chat.unreadCount;
+    });
+  }, [filteredChats, activeChatId]);
 
   const handleChatClick = (chatId: string) => {
     if (onChatSelect) {
@@ -201,7 +224,7 @@ const ChatList: React.FC<ChatListProps> = ({
                     )}
                     
                     {chat.unreadCount && chat.unreadCount > 0 && (
-                      <Badge className="bg-yuhu-primary">
+                      <Badge id={`chat-badge-${chat.id}`} className="bg-yuhu-primary">
                         {chat.unreadCount > 99 ? '99+' : chat.unreadCount}
                       </Badge>
                     )}
