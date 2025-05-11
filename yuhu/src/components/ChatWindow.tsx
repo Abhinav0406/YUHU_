@@ -116,9 +116,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     }, 100);
   };
 
-  // Real-time subscription for new messages
+  // Real-time subscription for new messages (all chats)
   useEffect(() => {
-    if (!activeChatId) return;
+    // Request notification permission on mount
+    if (Notification && Notification.permission !== 'granted') {
+      Notification.requestPermission();
+    }
 
     const channel = supabase
       .channel('realtime:messages')
@@ -128,26 +131,34 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           event: 'INSERT',
           schema: 'public',
           table: 'messages',
-          filter: `chat_id=eq.${activeChatId}`,
         },
         async (payload) => {
-          queryClient.invalidateQueries({ queryKey: ['messages', activeChatId] });
-          // Notification logic
           const newMsg = payload.new;
           if (newMsg && user && newMsg.sender_id !== user.id) {
-            // Fetch sender profile for name (if available in payload, otherwise fallback)
+            // Show in-app toast
             let senderName = 'Someone';
-            if (chatDetails?.type === 'direct') {
-              senderName = chatDetails?.name || 'Someone';
-            } else if (newMsg.sender_name) {
+            if (newMsg.sender_name) {
               senderName = newMsg.sender_name;
             }
             toast(`${senderName}: ${newMsg.text}`);
-            // If the message is for a different chat, update the sidebar
-            if (newMsg.chat_id !== activeChatId) {
-              queryClient.invalidateQueries({ queryKey: ['chats'] });
+
+            // Show browser notification
+            if (Notification && Notification.permission === 'granted') {
+              let iconUrl = '/chat-icon.png'; // Default icon path (place your icon in public folder)
+              if (newMsg.sender_avatar) {
+                iconUrl = newMsg.sender_avatar;
+              }
+              new Notification(`${senderName}: ${newMsg.text}`, {
+                icon: iconUrl
+              });
             }
           }
+          // Invalidate messages for the relevant chat
+          if (newMsg && newMsg.chat_id) {
+            queryClient.invalidateQueries({ queryKey: ['messages', newMsg.chat_id] });
+          }
+          // Invalidate chats list to update last message
+          queryClient.invalidateQueries({ queryKey: ['chats'] });
         }
       )
       .subscribe();
@@ -155,7 +166,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeChatId, queryClient, user, chatDetails]);
+  }, [queryClient, user]);
 
   const clearChatMutation = useMutation({
     mutationFn: () => clearChat(activeChatId!),
@@ -689,3 +700,4 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
 };
 
 export default ChatWindow;
+
