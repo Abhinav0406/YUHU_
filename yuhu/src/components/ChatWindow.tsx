@@ -19,6 +19,7 @@ import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import UserProfile from './UserProfile';
 import { subscribeToSignaling, sendSignal, SignalMessage } from '@/lib/webrtcSignaling';
+import { getIceServers } from '@/services/iceService';
 
 interface ChatWindowProps {
   chatId?: string;
@@ -169,20 +170,77 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const friendId = chatDetails?.friendId;
   console.log('friendId', friendId, 'userId', user?.id);
 
-  // Start call (as caller)
+  // Call UI state
+  const [isMuted, setIsMuted] = useState(false);
+  const [isCameraOn, setIsCameraOn] = useState(true);
+  const [callStartTime, setCallStartTime] = useState<number | null>(null);
+  const [callDuration, setCallDuration] = useState('00:00');
+
+  // Update call duration timer
+  useEffect(() => {
+    let timer: NodeJS.Timeout;
+    if (showCallModal && callStartTime) {
+      timer = setInterval(() => {
+        const elapsed = Math.floor((Date.now() - callStartTime) / 1000);
+        const min = String(Math.floor(elapsed / 60)).padStart(2, '0');
+        const sec = String(elapsed % 60).padStart(2, '0');
+        setCallDuration(`${min}:${sec}`);
+      }, 1000);
+    } else {
+      setCallDuration('00:00');
+    }
+    return () => clearInterval(timer);
+  }, [showCallModal, callStartTime]);
+
+  // Toggle mute
+  const toggleMute = () => {
+    setIsMuted((prev) => {
+      const newMuted = !prev;
+      localStreamRef.current?.getAudioTracks().forEach(track => (track.enabled = !newMuted));
+      return newMuted;
+    });
+  };
+  // Toggle camera
+  const toggleCamera = () => {
+    setIsCameraOn((prev) => {
+      const newOn = !prev;
+      localStreamRef.current?.getVideoTracks().forEach(track => (track.enabled = newOn));
+      return newOn;
+    });
+  };
+
+  // Start call: set start time
   const startCall = async () => {
     setCallError(null);
     setIsCalling(true);
     setShowCallModal(true);
+    setCallStartTime(Date.now());
     await setupMediaAndConnection(true);
   };
-
-  // Answer call (as callee)
+  // Answer call: set start time
   const answerCall = async () => {
     setCallError(null);
     setIsReceivingCall(false);
     setShowCallModal(true);
+    setCallStartTime(Date.now());
     await setupMediaAndConnection(false);
+  };
+  // End call: reset start time
+  const endCall = () => {
+    setShowCallModal(false);
+    setIsCalling(false);
+    setIsReceivingCall(false);
+    setCallError(null);
+    setCallStartTime(null);
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+    localStreamRef.current?.getTracks().forEach(track => track.stop());
+    localStreamRef.current = null;
+    remoteStreamRef.current = null;
+    if (signalingUnsubRef.current) {
+      signalingUnsubRef.current();
+      signalingUnsubRef.current = undefined;
+    }
   };
 
   // Setup media and peer connection
@@ -194,26 +252,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = localStream;
       }
-      // Create peer connection
-      const pc = new RTCPeerConnection({
-        iceServers: [
-          { urls: 'stun:stun.l.google.com:19302' },
-          {
-            urls: 'turn:openrelay.metered.ca:80',
-            username: 'openrelayproject',
-            credential: 'openrelayproject'
-          }
-        ],
-      });
+
+      // Get ICE servers from our backend
+      const iceServers = await getIceServers();
+      console.log('Using ICE servers:', iceServers);
+      
+      // Create peer connection with dynamic ICE servers
+      const pc = new RTCPeerConnection({ iceServers });
       peerConnectionRef.current = pc;
+
       // Add local tracks
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+
       // Handle remote stream
       pc.ontrack = (event) => {
         if (remoteVideoRef.current) {
           remoteVideoRef.current.srcObject = event.streams[0];
         }
       };
+
       // Handle ICE candidates
       pc.onicecandidate = (event) => {
         if (event.candidate && friendId) {
@@ -226,6 +283,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           });
         }
       };
+
       // Signaling
       if (!signalingUnsubRef.current) {
         signalingUnsubRef.current = subscribeToSignaling(activeChatId!, async (msg: SignalMessage) => {
@@ -262,8 +320,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           data: offer,
         });
       }
-    } catch (err) {
-      setCallError('Could not start call: ' + (err as Error).message);
+    } catch (error) {
+      console.error('Error setting up media and connection:', error);
+      setCallError('Failed to start call: ' + (error as Error).message);
       endCall();
     }
   };
@@ -284,23 +343,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       unsub();
     };
   }, [activeChatId, user?.id]);
-
-  // End call and cleanup
-  const endCall = () => {
-    setShowCallModal(false);
-    setIsCalling(false);
-    setIsReceivingCall(false);
-    setCallError(null);
-    peerConnectionRef.current?.close();
-    peerConnectionRef.current = null;
-    localStreamRef.current?.getTracks().forEach(track => track.stop());
-    localStreamRef.current = null;
-    remoteStreamRef.current = null;
-    if (signalingUnsubRef.current) {
-      signalingUnsubRef.current();
-      signalingUnsubRef.current = undefined;
-    }
-  };
 
   // Attach video refs on modal open
   useEffect(() => {
@@ -386,10 +428,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               <Phone className="h-5 w-5" />
             </Button>
           )}
-          <Button variant="ghost" size="icon" className="text-muted-foreground touch-target">
-            <Video className="h-5 w-5" />
-            <span className="sr-only">Video call</span>
-          </Button>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" size="icon" className="text-muted-foreground touch-target">
@@ -466,20 +504,99 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
 
       {/* Call Modal */}
       <Dialog open={showCallModal || isReceivingCall} onOpenChange={endCall}>
-        <DialogContent className="max-w-md w-full rounded-2xl bg-zinc-900 shadow-2xl p-4 flex flex-col items-center">
-          <h2 className="text-lg font-bold mb-4 text-yuhu-primary">
-            {isReceivingCall ? 'Incoming Call' : 'Call in Progress'}
-          </h2>
-          {callError && <div className="text-red-500 mb-2">{callError}</div>}
-          <div className="flex flex-col items-center gap-4 w-full">
-            <video ref={localVideoRef} autoPlay muted playsInline className="rounded-lg bg-black w-full max-w-xs h-40 object-cover" />
-            <video ref={remoteVideoRef} autoPlay playsInline className="rounded-lg bg-black w-full max-w-xs h-40 object-cover" />
+        <DialogContent className="max-w-lg w-full rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 shadow-2xl p-0 overflow-hidden flex flex-col items-center">
+          <div className="w-full flex flex-col items-center p-6 pb-2">
+            <h2 className="text-xl font-bold mb-2 text-yuhu-primary tracking-tight">
+              {isReceivingCall ? 'Incoming Call' : 'Call in Progress'}
+            </h2>
+            <div className="text-xs text-muted-foreground mb-2">
+              {isReceivingCall ? 'Someone is calling you...' : `Duration: ${callDuration}`}
+            </div>
+            {callError && <div className="text-red-500 mb-2">{callError}</div>}
+            <div className="flex flex-col sm:flex-row gap-4 w-full justify-center items-center mt-2">
+              {/* Local Video/User */}
+              <div className="flex flex-col items-center">
+                <div className="relative">
+                  <video
+                    ref={localVideoRef}
+                    autoPlay
+                    muted
+                    playsInline
+                    className={`rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary ${!isCameraOn ? 'hidden' : ''} max-w-full`}
+                  />
+                  {!isCameraOn && (
+                    <div className="w-64 h-64 rounded-2xl bg-zinc-700 flex items-center justify-center text-5xl font-bold text-yuhu-primary shadow-lg max-w-full">
+                      {user?.username?.[0]?.toUpperCase() || 'U'}
+                    </div>
+                  )}
+                  <span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">You</span>
+                </div>
+                <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{user?.fullName || user?.username}</div>
+              </div>
+              {/* Remote Video/User */}
+              <div className="flex flex-col items-center">
+                <div className="relative">
+                  <video
+                    ref={remoteVideoRef}
+                    autoPlay
+                    playsInline
+                    className="rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary max-w-full"
+                  />
+                  {/* Fallback avatar/initials if remote video is not available */}
+                  {/* Optionally, you can add a state to detect remote video stream and show fallback if needed */}
+                  <span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">Friend</span>
+                </div>
+                <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{chatDetails?.name}</div>
+              </div>
+            </div>
+            {/* Animated Connecting Indicator */}
+            {!callStartTime && !isReceivingCall && (
+              <div className="mt-4 flex items-center gap-2 animate-pulse text-yuhu-primary">
+                <span className="w-2 h-2 bg-yuhu-primary rounded-full inline-block"></span>
+                Connecting...
+              </div>
+            )}
+            {/* Call Controls */}
+            <div className="flex gap-4 mt-6 mb-2 w-full justify-center">
+              <Button
+                variant={isMuted ? 'secondary' : 'ghost'}
+                size="icon"
+                className={`rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow ${isMuted ? 'bg-yellow-600' : ''}`}
+                onClick={toggleMute}
+                title={isMuted ? 'Unmute' : 'Mute'}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
+                  {isMuted ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 9v6m6-6v6m-9 0a9 9 0 1118 0 9 9 0 01-18 0z" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2h6a2 2 0 002-2z" />
+                  )}
+                </svg>
+              </Button>
+              <Button
+                variant={isCameraOn ? 'ghost' : 'secondary'}
+                size="icon"
+                className={`rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow ${!isCameraOn ? 'bg-yellow-600' : ''}`}
+                onClick={toggleCamera}
+                title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
+                  {isCameraOn ? (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M4 6v12a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2z" />
+                  ) : (
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M4 6v12a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2z" />
+                  )}
+                </svg>
+              </Button>
+              <Button
+                className="rounded-full bg-red-600 hover:bg-red-700 text-white shadow px-6 font-bold"
+                onClick={endCall}
+                title="End Call"
+              >
+                End
+              </Button>
+            </div>
           </div>
-          {isReceivingCall ? (
-            <Button className="mt-6 bg-yuhu-primary hover:bg-yuhu-dark w-full" onClick={answerCall}>Answer</Button>
-          ) : (
-            <Button className="mt-6 bg-red-600 hover:bg-red-700 w-full" onClick={endCall}>End Call</Button>
-          )}
         </DialogContent>
       </Dialog>
     </div>
