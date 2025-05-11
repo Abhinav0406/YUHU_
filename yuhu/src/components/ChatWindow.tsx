@@ -198,20 +198,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       const pc = new RTCPeerConnection({
         iceServers: [
           { urls: 'stun:stun.l.google.com:19302' },
+          {
+            urls: 'turn:openrelay.metered.ca:80',
+            username: 'openrelayproject',
+            credential: 'openrelayproject'
+          }
         ],
       });
       peerConnectionRef.current = pc;
       // Add local tracks
       localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
       // Handle remote stream
-      remoteStreamRef.current = new MediaStream();
-      if (remoteVideoRef.current) {
-        remoteVideoRef.current.srcObject = remoteStreamRef.current;
-      }
       pc.ontrack = (event) => {
-        event.streams[0].getTracks().forEach(track => {
-          remoteStreamRef.current?.addTrack(track);
-        });
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.srcObject = event.streams[0];
+        }
       };
       // Handle ICE candidates
       pc.onicecandidate = (event) => {
