@@ -18,6 +18,7 @@ import { supabase } from '@/lib/supabase';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import UserProfile from './UserProfile';
+import { subscribeToSignaling, sendSignal, SignalMessage } from '@/lib/webrtcSignaling';
 
 interface ChatWindowProps {
   chatId?: string;
@@ -32,6 +33,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const [isClearChatDialogOpen, setIsClearChatDialogOpen] = useState(false);
   const [showProfile, setShowProfile] = useState(false);
   const [friendProfile, setFriendProfile] = useState<any>(null);
+  const [showCallModal, setShowCallModal] = useState(false);
+  const [isCalling, setIsCalling] = useState(false);
+  const [isReceivingCall, setIsReceivingCall] = useState(false);
+  const [callError, setCallError] = useState<string | null>(null);
+  const localVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
+  const localStreamRef = useRef<MediaStream | null>(null);
+  const remoteStreamRef = useRef<MediaStream | null>(null);
+  const signalingUnsubRef = useRef<() => void>();
   
   const activeChatId = propChatId || paramChatId;
   const [isTyping, setIsTyping] = useState(false);
@@ -154,6 +165,152 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     }
   };
 
+  // Helper: get friend's user id
+  const friendId = chatDetails?.friendId;
+  console.log('friendId', friendId, 'userId', user?.id);
+
+  // Start call (as caller)
+  const startCall = async () => {
+    setCallError(null);
+    setIsCalling(true);
+    setShowCallModal(true);
+    await setupMediaAndConnection(true);
+  };
+
+  // Answer call (as callee)
+  const answerCall = async () => {
+    setCallError(null);
+    setIsReceivingCall(false);
+    setShowCallModal(true);
+    await setupMediaAndConnection(false);
+  };
+
+  // Setup media and peer connection
+  const setupMediaAndConnection = async (isCaller: boolean) => {
+    try {
+      // Get local media
+      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      localStreamRef.current = localStream;
+      if (localVideoRef.current) {
+        localVideoRef.current.srcObject = localStream;
+      }
+      // Create peer connection
+      const pc = new RTCPeerConnection({
+        iceServers: [
+          { urls: 'stun:stun.l.google.com:19302' },
+        ],
+      });
+      peerConnectionRef.current = pc;
+      // Add local tracks
+      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      // Handle remote stream
+      remoteStreamRef.current = new MediaStream();
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+      }
+      pc.ontrack = (event) => {
+        event.streams[0].getTracks().forEach(track => {
+          remoteStreamRef.current?.addTrack(track);
+        });
+      };
+      // Handle ICE candidates
+      pc.onicecandidate = (event) => {
+        if (event.candidate && friendId) {
+          console.log('Sending ICE candidate to', friendId, event.candidate);
+          sendSignal(activeChatId!, {
+            type: 'ice',
+            from: user.id,
+            to: friendId,
+            data: event.candidate,
+          });
+        }
+      };
+      // Signaling
+      if (!signalingUnsubRef.current) {
+        signalingUnsubRef.current = subscribeToSignaling(activeChatId!, async (msg: SignalMessage) => {
+          console.log('Received signal', msg);
+          if (msg.to !== user.id) return;
+          if (!peerConnectionRef.current) return;
+          if (msg.type === 'offer' && !isCaller) {
+            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
+            const answer = await peerConnectionRef.current.createAnswer();
+            await peerConnectionRef.current.setLocalDescription(answer);
+            sendSignal(activeChatId!, {
+              type: 'answer',
+              from: user.id,
+              to: friendId!,
+              data: answer,
+            });
+          } else if (msg.type === 'answer' && isCaller) {
+            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
+          } else if (msg.type === 'ice') {
+            try {
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(msg.data));
+            } catch (e) {}
+          }
+        });
+      }
+      // Caller: create and send offer
+      if (isCaller && friendId) {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        sendSignal(activeChatId!, {
+          type: 'offer',
+          from: user.id,
+          to: friendId,
+          data: offer,
+        });
+      }
+    } catch (err) {
+      setCallError('Could not start call: ' + (err as Error).message);
+      endCall();
+    }
+  };
+
+  // Handle incoming signaling (offer)
+  useEffect(() => {
+    if (!activeChatId || !user?.id) return;
+    // Listen for incoming offers
+    const unsub = subscribeToSignaling(activeChatId, (msg: SignalMessage) => {
+      console.log('Incoming signal (effect)', msg, 'userId', user.id);
+      if (msg.to !== user.id) return;
+      if (msg.type === 'offer') {
+        console.log('Incoming call offer received!');
+        setIsReceivingCall(true);
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, [activeChatId, user?.id]);
+
+  // End call and cleanup
+  const endCall = () => {
+    setShowCallModal(false);
+    setIsCalling(false);
+    setIsReceivingCall(false);
+    setCallError(null);
+    peerConnectionRef.current?.close();
+    peerConnectionRef.current = null;
+    localStreamRef.current?.getTracks().forEach(track => track.stop());
+    localStreamRef.current = null;
+    remoteStreamRef.current = null;
+    if (signalingUnsubRef.current) {
+      signalingUnsubRef.current();
+      signalingUnsubRef.current = undefined;
+    }
+  };
+
+  // Attach video refs on modal open
+  useEffect(() => {
+    if (showCallModal && localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+    if (showCallModal && remoteVideoRef.current && remoteStreamRef.current) {
+      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+    }
+  }, [showCallModal]);
+
   // Loading state
   if (isLoadingDetails || isLoadingMessages) {
     return (
@@ -222,10 +379,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           </div>
         </div>
         <div className="flex items-center space-x-1">
-          <Button variant="ghost" size="icon" className="text-muted-foreground touch-target">
-            <Phone className="h-5 w-5" />
-            <span className="sr-only">Voice call</span>
-          </Button>
+          {/* Add Call button for direct chats */}
+          {chatDetails.type === 'direct' && (
+            <Button variant="ghost" size="icon" className="text-yuhu-primary" onClick={startCall} title="Start Call">
+              <Phone className="h-5 w-5" />
+            </Button>
+          )}
           <Button variant="ghost" size="icon" className="text-muted-foreground touch-target">
             <Video className="h-5 w-5" />
             <span className="sr-only">Video call</span>
@@ -301,6 +460,25 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       <Dialog open={showProfile} onOpenChange={setShowProfile}>
         <DialogContent className="max-w-md w-full rounded-2xl bg-zinc-800 shadow-2xl p-0 overflow-y-auto max-h-[90vh]">
           {friendProfile && <UserProfile profile={friendProfile} />}
+        </DialogContent>
+      </Dialog>
+
+      {/* Call Modal */}
+      <Dialog open={showCallModal || isReceivingCall} onOpenChange={endCall}>
+        <DialogContent className="max-w-md w-full rounded-2xl bg-zinc-900 shadow-2xl p-4 flex flex-col items-center">
+          <h2 className="text-lg font-bold mb-4 text-yuhu-primary">
+            {isReceivingCall ? 'Incoming Call' : 'Call in Progress'}
+          </h2>
+          {callError && <div className="text-red-500 mb-2">{callError}</div>}
+          <div className="flex flex-col items-center gap-4 w-full">
+            <video ref={localVideoRef} autoPlay muted playsInline className="rounded-lg bg-black w-full max-w-xs h-40 object-cover" />
+            <video ref={remoteVideoRef} autoPlay playsInline className="rounded-lg bg-black w-full max-w-xs h-40 object-cover" />
+          </div>
+          {isReceivingCall ? (
+            <Button className="mt-6 bg-yuhu-primary hover:bg-yuhu-dark w-full" onClick={answerCall}>Answer</Button>
+          ) : (
+            <Button className="mt-6 bg-red-600 hover:bg-red-700 w-full" onClick={endCall}>End Call</Button>
+          )}
         </DialogContent>
       </Dialog>
     </div>
