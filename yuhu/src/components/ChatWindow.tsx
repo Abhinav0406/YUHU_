@@ -20,6 +20,7 @@ import { Dialog, DialogContent } from '@/components/ui/dialog';
 import UserProfile from './UserProfile';
 import { subscribeToSignaling, sendSignal, SignalMessage } from '@/lib/webrtcSignaling';
 import { getIceServers } from '@/services/iceService';
+import { toast } from '@/components/ui/sonner';
 
 interface ChatWindowProps {
   chatId?: string;
@@ -28,7 +29,7 @@ interface ChatWindowProps {
 
 const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) => {
   const { chatId: paramChatId } = useParams<{ chatId: string }>();
-  const { user } = useAuth();
+  const { user, profile } = useAuth();
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const [isClearChatDialogOpen, setIsClearChatDialogOpen] = useState(false);
@@ -129,8 +130,24 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           table: 'messages',
           filter: `chat_id=eq.${activeChatId}`,
         },
-        (payload) => {
+        async (payload) => {
           queryClient.invalidateQueries({ queryKey: ['messages', activeChatId] });
+          // Notification logic
+          const newMsg = payload.new;
+          if (newMsg && user && newMsg.sender_id !== user.id) {
+            // Fetch sender profile for name (if available in payload, otherwise fallback)
+            let senderName = 'Someone';
+            if (chatDetails?.type === 'direct') {
+              senderName = chatDetails?.name || 'Someone';
+            } else if (newMsg.sender_name) {
+              senderName = newMsg.sender_name;
+            }
+            toast(`${senderName}: ${newMsg.text}`);
+            // If the message is for a different chat, update the sidebar
+            if (newMsg.chat_id !== activeChatId) {
+              queryClient.invalidateQueries({ queryKey: ['chats'] });
+            }
+          }
         }
       )
       .subscribe();
@@ -138,7 +155,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [activeChatId, queryClient]);
+  }, [activeChatId, queryClient, user, chatDetails]);
 
   const clearChatMutation = useMutation({
     mutationFn: () => clearChat(activeChatId!),
@@ -526,12 +543,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                   />
                   {!isCameraOn && (
                     <div className="w-64 h-64 rounded-2xl bg-zinc-700 flex items-center justify-center text-5xl font-bold text-yuhu-primary shadow-lg max-w-full">
-                      {user?.username?.[0]?.toUpperCase() || 'U'}
+                      {profile?.username?.[0]?.toUpperCase() || 'U'}
                     </div>
                   )}
                   <span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">You</span>
                 </div>
-                <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{user?.fullName || user?.username}</div>
+                <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{profile?.fullName || profile?.username}</div>
               </div>
               {/* Remote Video/User */}
               <div className="flex flex-col items-center">
@@ -558,6 +575,15 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
             )}
             {/* Call Controls */}
             <div className="flex gap-4 mt-6 mb-2 w-full justify-center">
+              {isReceivingCall && (
+                <Button
+                  className="rounded-full bg-green-600 hover:bg-green-700 text-white shadow px-6 font-bold"
+                  onClick={answerCall}
+                  title="Accept Call"
+                >
+                  Accept
+                </Button>
+              )}
               <Button
                 variant={isMuted ? 'secondary' : 'ghost'}
                 size="icon"
