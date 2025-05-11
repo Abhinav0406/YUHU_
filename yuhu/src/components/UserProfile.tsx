@@ -48,8 +48,14 @@ type ProfileFormValues = z.infer<typeof profileSchema>;
 
 const DEFAULT_AVATAR = 'https://api.dicebear.com/7.x/avataaars/svg?seed=default';
 
-const UserProfile = () => {
-  const { profile, updateProfile, deleteProfile } = useAuth();
+// Add prop type
+interface UserProfileProps {
+  profile?: any; // Accepts a profile object for friend view
+}
+
+const UserProfile: React.FC<UserProfileProps> = ({ profile: propProfile }) => {
+  const { profile: myProfile, updateProfile, deleteProfile } = useAuth();
+  const profile = propProfile || myProfile;
   const { toast } = useToast();
   const [isEditing, setIsEditing] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -58,6 +64,7 @@ const UserProfile = () => {
   const [showDeletePhotoDialog, setShowDeletePhotoDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
+  const [showLargeAvatar, setShowLargeAvatar] = useState(false);
   
   // Initialize form with react-hook-form
   const form = useForm<ProfileFormValues>({
@@ -242,30 +249,34 @@ const UserProfile = () => {
       <CardHeader>
         <div className="flex items-center justify-between">
           <div>
-            <CardTitle className="text-2xl font-bold text-yuhu-primary">My Profile</CardTitle>
+            <CardTitle className="text-2xl font-bold text-yuhu-primary">
+              {propProfile ? `${profile?.fullName || profile?.username}'s Profile` : 'My Profile'}
+            </CardTitle>
             <CardDescription className="text-muted-foreground">
-              Update your personal information and preferences
+              {propProfile ? 'User details' : 'Update your personal information and preferences'}
             </CardDescription>
           </div>
-          <Button 
-            variant="outline" 
-            size="sm" 
-            onClick={() => setIsEditing(!isEditing)}
-            className="border-yuhu-primary text-yuhu-primary hover:bg-yuhu-primary/10"
-            disabled={isSubmitting}
-          >
-            {isEditing ? (
-              <>
-                <Save className="mr-2 h-4 w-4" />
-                Save
-              </>
-            ) : (
-              <>
-                <Edit className="mr-2 h-4 w-4" />
-                Edit
-              </>
-            )}
-          </Button>
+          {!propProfile && (
+            <Button 
+              variant="outline" 
+              size="sm" 
+              onClick={() => setIsEditing(!isEditing)}
+              className="border-yuhu-primary text-yuhu-primary hover:bg-yuhu-primary/10"
+              disabled={isSubmitting}
+            >
+              {isEditing ? (
+                <>
+                  <Save className="mr-2 h-4 w-4" />
+                  Save
+                </>
+              ) : (
+                <>
+                  <Edit className="mr-2 h-4 w-4" />
+                  Edit
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </CardHeader>
 
@@ -273,14 +284,23 @@ const UserProfile = () => {
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
             <div className="flex flex-col items-center mb-6">
-              <Avatar className="h-24 w-24 border-4 border-yuhu-primary/20">
+              <Avatar className="h-24 w-24 border-4 border-yuhu-primary/20 cursor-pointer" onClick={() => setShowLargeAvatar(true)}>
                 <AvatarImage src={profile?.avatar || ''} alt={profile?.username} />
                 <AvatarFallback className="bg-yuhu-primary text-white text-xl">
                   {profile?.username ? profile.username[0].toUpperCase() : 'U'}
                 </AvatarFallback>
               </Avatar>
-              {/* Change Avatar button (only when editing) */}
-              {isEditing && (
+              <Dialog open={showLargeAvatar} onOpenChange={setShowLargeAvatar}>
+                <DialogContent className="flex items-center justify-center bg-black p-0 max-w-xs sm:max-w-md">
+                  <img
+                    src={profile?.avatar || ''}
+                    alt="Profile"
+                    className="max-w-full max-h-[80vh] rounded-lg object-contain"
+                    style={{ background: '#222' }}
+                  />
+                </DialogContent>
+              </Dialog>
+              {!propProfile && isEditing && (
                 <>
                   <input
                     type="file"
@@ -305,8 +325,7 @@ const UserProfile = () => {
                   </Button>
                 </>
               )}
-              {/* Delete Photo button (always if avatar exists) */}
-              {profile?.avatar && !avatarUploading && (
+              {!propProfile && profile?.avatar && !avatarUploading && (
                 <Button
                   type="button"
                   variant="destructive"

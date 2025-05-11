@@ -16,6 +16,8 @@ import { Phone, Video, Loader2, MoreVertical } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { supabase } from '@/lib/supabase';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+import UserProfile from './UserProfile';
 
 interface ChatWindowProps {
   chatId?: string;
@@ -28,6 +30,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const scrollRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const [isClearChatDialogOpen, setIsClearChatDialogOpen] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [friendProfile, setFriendProfile] = useState<any>(null);
   
   const activeChatId = propChatId || paramChatId;
   const [isTyping, setIsTyping] = useState(false);
@@ -136,6 +140,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setIsClearChatDialogOpen(true);
   };
 
+  // Handler to fetch and show friend's profile
+  const handleShowProfile = async () => {
+    if (chatDetails?.type !== 'direct' || !chatDetails?.friendId) return;
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', chatDetails.friendId)
+      .maybeSingle();
+    if (!error && data) {
+      setFriendProfile({ ...data, avatar: data.avatar_url });
+      setShowProfile(true);
+    }
+  };
+
   // Loading state
   if (isLoadingDetails || isLoadingMessages) {
     return (
@@ -187,7 +205,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     <div className="flex flex-col h-full w-full max-w-full bg-background">
       {/* Chat header */}
       <div className="border-b p-2 sm:p-3 flex items-center justify-between min-h-[56px] sm:min-h-[64px]">
-        <div className="flex items-center min-w-0">
+        <div className="flex items-center min-w-0 cursor-pointer" onClick={handleShowProfile}>
           <Avatar className="h-8 w-8 sm:h-9 sm:w-9">
             <AvatarImage src={chatDetails.avatar} alt={chatDetails.name} />
             <AvatarFallback>{chatDetails.name[0]}</AvatarFallback>
@@ -278,6 +296,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         confirmText="Clear Chat"
         cancelText="Cancel"
       />
+
+      {/* Friend Profile Modal */}
+      <Dialog open={showProfile} onOpenChange={setShowProfile}>
+        <DialogContent className="max-w-md w-full rounded-2xl bg-zinc-800 shadow-2xl p-0 overflow-y-auto max-h-[90vh]">
+          {friendProfile && <UserProfile profile={friendProfile} />}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 };

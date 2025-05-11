@@ -77,62 +77,76 @@ const Message: React.FC<MessageProps> = ({
         
         {!isMe && !isFirst && <div className="w-7 mr-2" />}
         
-        <div className={cn("flex flex-col relative", isMe && "items-end")}>
-          {isFirst && !isMe && (
-            <div className="text-xs text-muted-foreground ml-1 mb-0.5">
-              {sender.name}
+        {/* Sent message: show menu just left of the bubble */}
+        {isMe ? (
+          <>
+            <div className="flex items-end mr-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 hover:bg-muted/50"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem
+                    className="text-red-600 cursor-pointer hover:bg-red-50"
+                    onClick={handleDelete}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete Message
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             </div>
-          )}
-          
-          <div className="flex items-end gap-1">
-            <div
-              className={cn(
-                "chat-bubble relative group/message",
-                isMe ? "chat-bubble-sent" : "chat-bubble-received",
-                isConsecutive && isMe && "rounded-tr-md",
-                isConsecutive && !isMe && "rounded-tl-md",
-              )}
-            >
-              <p className="text-sm">{text}</p>
-              {isMe && (
-                <div className="absolute -right-8 top-1/2 -translate-y-1/2 opacity-0 group-hover/message:opacity-100 transition-opacity duration-200">
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-6 w-6 hover:bg-muted/50"
-                      >
-                        <MoreVertical className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-40">
-                      <DropdownMenuItem
-                        className="text-red-600 cursor-pointer hover:bg-red-50"
-                        onClick={handleDelete}
-                      >
-                        <Trash2 className="h-4 w-4 mr-2" />
-                        Delete Message
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
+            <div className={cn("flex flex-col relative items-end")}> 
+              <div className="flex items-end gap-1">
+                <div
+                  className={cn(
+                    "chat-bubble relative group/message",
+                    "chat-bubble-sent",
+                    isConsecutive && "rounded-tr-md",
+                    "max-w-xs md:max-w-md break-words whitespace-pre-line"
+                  )}
+                >
+                  <p className="text-sm whitespace-pre-line break-words">{text}</p>
                 </div>
-              )}
+              </div>
+              <div className="flex items-center gap-1 text-[10px] px-2 justify-end text-muted-foreground">
+                <span>{time}</span>
+                {status === 'read' && (
+                  <span className="text-yuhu-primary">• Read</span>
+                )}
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className={cn("flex flex-col relative")}> 
+            {isFirst && (
+              <div className="text-xs text-muted-foreground ml-1 mb-0.5">
+                {sender.name}
+              </div>
+            )}
+            <div className="flex items-end gap-1">
+              <div
+                className={cn(
+                  "chat-bubble relative group/message",
+                  "chat-bubble-received",
+                  isConsecutive && "rounded-tl-md",
+                  "max-w-xs md:max-w-md break-words whitespace-pre-line"
+                )}
+              >
+                <p className="text-sm whitespace-pre-line break-words">{text}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-1 text-[10px] px-2 justify-start text-muted-foreground">
+              <span>{time}</span>
             </div>
           </div>
-          
-          <div
-            className={cn(
-              "flex items-center gap-1 text-[10px] px-2",
-              isMe ? "justify-end text-muted-foreground" : "justify-start text-muted-foreground"
-            )}
-          >
-            <span>{time}</span>
-            {isMe && status === 'read' && (
-              <span className="text-yuhu-primary">• Read</span>
-            )}
-          </div>
-        </div>
+        )}
       </div>
 
       <ConfirmationDialog

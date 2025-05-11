@@ -398,6 +398,7 @@ export async function getChatDetails(chatId: string, userId: string): Promise<{
   avatar: string;
   online?: boolean;
   members?: { id: string; name: string }[];
+  friendId?: string;
 } | null> {
   // Get chat info
   const { data: chat, error: chatError } = await supabase
@@ -443,7 +444,8 @@ export async function getChatDetails(chatId: string, userId: string): Promise<{
       type: chat.type,
       name: profile.full_name || profile.username,
       avatar: profile.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.username}`,
-      online: profile.status === 'online'
+      online: profile.status === 'online',
+      friendId: profile.id
     };
   } else {
     // For group chats
