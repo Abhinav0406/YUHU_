@@ -19,7 +19,7 @@ import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import UserProfile from './UserProfile';
 import { subscribeToSignaling, sendSignal, SignalMessage } from '@/lib/webrtcSignaling';
-import { getIceServers } from '@/services/iceService';
+import { getIceServers } from '@/lib/iceServers';
 import { toast } from '@/components/ui/sonner';
 
 interface ChatWindowProps {
@@ -242,8 +242,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setCallStartTime(Date.now());
     await setupMediaAndConnection(false);
   };
-  // End call: reset start time
+  // End call: reset start time and notify other party
   const endCall = () => {
+    // Send hangup signal to other party
+    if (friendId) {
+      sendSignal(activeChatId!, {
+        type: 'hangup',
+        from: user.id,
+        to: friendId,
+        data: null
+      });
+    }
+
     setShowCallModal(false);
     setIsCalling(false);
     setIsReceivingCall(false);
@@ -283,8 +293,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
 
       // Handle remote stream
       pc.ontrack = (event) => {
-        if (remoteVideoRef.current) {
-          remoteVideoRef.current.srcObject = event.streams[0];
+        console.log('Received remote track:', event);
+        if (event.streams && event.streams[0]) {
+          remoteStreamRef.current = event.streams[0];
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = event.streams[0];
+            // Ensure video plays
+            remoteVideoRef.current.play().catch(err => console.error('Error playing remote video:', err));
+          }
         }
       };
 
@@ -301,41 +317,84 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         }
       };
 
+      // Handle connection state changes
+      pc.onconnectionstatechange = () => {
+        console.log('Connection state:', pc.connectionState);
+        if (pc.connectionState === 'failed') {
+          setCallError('Connection failed. Please try again.');
+          endCall();
+        }
+      };
+
+      // Handle ICE connection state changes
+      pc.oniceconnectionstatechange = () => {
+        console.log('ICE connection state:', pc.iceConnectionState);
+        if (pc.iceConnectionState === 'failed') {
+          setCallError('ICE connection failed. Please check your network connection.');
+          endCall();
+        }
+      };
+
       // Signaling
       if (!signalingUnsubRef.current) {
         signalingUnsubRef.current = subscribeToSignaling(activeChatId!, async (msg: SignalMessage) => {
           console.log('Received signal', msg);
           if (msg.to !== user.id) return;
-          if (!peerConnectionRef.current) return;
+          if (!peerConnectionRef.current && msg.type !== 'hangup') return;
+          
           if (msg.type === 'offer' && !isCaller) {
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
-            const answer = await peerConnectionRef.current.createAnswer();
-            await peerConnectionRef.current.setLocalDescription(answer);
-            sendSignal(activeChatId!, {
-              type: 'answer',
-              from: user.id,
-              to: friendId!,
-              data: answer,
-            });
-          } else if (msg.type === 'answer' && isCaller) {
-            await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
+            try {
+              await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
+              const answer = await peerConnectionRef.current.createAnswer();
+              await peerConnectionRef.current.setLocalDescription(answer);
+              sendSignal(activeChatId!, {
+                type: 'answer',
+                from: user.id,
+                to: friendId!,
+                data: answer,
+              });
+            } catch (error) {
+              console.error('Error handling offer:', error);
+              setCallError('Failed to handle incoming call. Please try again.');
+              endCall();
+            }
+          } else if (msg.type === 'answer') {
+            try {
+              await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
+            } catch (error) {
+              console.error('Error handling answer:', error);
+              setCallError('Failed to establish call. Please try again.');
+              endCall();
+            }
           } else if (msg.type === 'ice') {
             try {
               await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(msg.data));
-            } catch (e) {}
+            } catch (error) {
+              console.error('Error adding ICE candidate:', error);
+            }
+          } else if (msg.type === 'hangup') {
+            // Handle incoming hangup signal
+            console.log('Received hangup signal');
+            endCall();
           }
         });
       }
       // Caller: create and send offer
       if (isCaller && friendId) {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        sendSignal(activeChatId!, {
-          type: 'offer',
-          from: user.id,
-          to: friendId,
-          data: offer,
-        });
+        try {
+          const offer = await pc.createOffer();
+          await pc.setLocalDescription(offer);
+          sendSignal(activeChatId!, {
+            type: 'offer',
+            from: user.id,
+            to: friendId,
+            data: offer,
+          });
+        } catch (error) {
+          console.error('Error creating offer:', error);
+          setCallError('Failed to start call. Please try again.');
+          endCall();
+        }
       }
     } catch (error) {
       console.error('Error setting up media and connection:', error);

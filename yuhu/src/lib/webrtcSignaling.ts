@@ -1,8 +1,8 @@
 import { supabase } from '@/lib/supabase';
 
-// Message types: 'offer', 'answer', 'ice'
+// Message types: 'offer', 'answer', 'ice', 'hangup'
 export type SignalMessage = {
-  type: 'offer' | 'answer' | 'ice';
+  type: 'offer' | 'answer' | 'ice' | 'hangup';
   from: string; // sender user id
   to: string;   // receiver user id
   data: any;
