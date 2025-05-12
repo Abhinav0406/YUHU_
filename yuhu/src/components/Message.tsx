@@ -56,10 +56,12 @@ const Message: React.FC<MessageProps> = ({
       const audio = new window.Audio(text);
       audio.addEventListener('loadedmetadata', () => {
         const dur = audio.duration;
-        if (!isNaN(dur)) {
+        if (isFinite(dur) && !isNaN(dur) && dur > 0) {
           const mins = Math.floor(dur / 60);
           const secs = Math.floor(dur % 60);
           setDuration(`${mins}:${secs.toString().padStart(2, '0')}`);
+        } else {
+          setDuration('0:00');
         }
       });
       // Preload metadata
@@ -119,7 +121,6 @@ const Message: React.FC<MessageProps> = ({
                 points="0,12 5,8 10,16 15,6 20,18 25,8 30,16 35,6 40,18 45,8 50,16 55,12 60,12"
               />
             </svg>
-            <span className="text-xs text-zinc-500 font-mono min-w-[32px] text-right">{duration || '0:00'}</span>
           </div>
         </div>
       );
