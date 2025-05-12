@@ -237,12 +237,31 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     });
   };
 
+  // Helper to log call events to Supabase
+  async function logCallEvent({ user_id, peer_id, type, status, chat_id, duration }) {
+    try {
+      await supabase.from('call_history').insert([
+        { user_id, peer_id, type, status, chat_id, duration }
+      ]);
+    } catch (e) {
+      console.error('Failed to log call event', e);
+    }
+  }
+
   // Start call: set start time
   const startCall = async () => {
     setCallError(null);
     setIsCalling(true);
     setShowCallModal(true);
     setCallStartTime(Date.now());
+    await logCallEvent({
+      user_id: user.id,
+      peer_id: friendId,
+      type: 'outgoing',
+      status: 'started',
+      chat_id: activeChatId,
+      duration: null
+    });
     await setupMediaAndConnection(true);
   };
   // Answer call: set start time
@@ -251,6 +270,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setIsReceivingCall(false);
     setShowCallModal(true);
     setCallStartTime(Date.now());
+    await logCallEvent({
+      user_id: user.id,
+      peer_id: friendId,
+      type: 'incoming',
+      status: 'accepted',
+      chat_id: activeChatId,
+      duration: null
+    });
+    toast({
+      title: 'Call accepted',
+      description: 'You accepted the call.'
+    });
     await setupMediaAndConnection(false);
   };
   // End call: reset start time and notify other party
@@ -278,6 +309,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     if (signalingUnsubRef.current) {
       signalingUnsubRef.current();
       signalingUnsubRef.current = undefined;
+    }
+
+    const callEndTime = Date.now();
+    if (callStartTime) {
+      const duration = Math.floor((callEndTime - callStartTime) / 1000);
+      logCallEvent({
+        user_id: user.id,
+        peer_id: friendId,
+        type: isReceivingCall ? 'incoming' : 'outgoing',
+        status: 'completed',
+        chat_id: activeChatId,
+        duration
+      });
+    } else {
+      // Missed call
+      logCallEvent({
+        user_id: user.id,
+        peer_id: friendId,
+        type: isReceivingCall ? 'incoming' : 'outgoing',
+        status: 'missed',
+        chat_id: activeChatId,
+        duration: null
+      });
+      toast({
+        title: 'Missed call',
+        description: `You missed a call from ${chatDetails?.name || 'a user'}`
+      });
     }
   };
 
@@ -424,6 +482,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       if (msg.type === 'offer') {
         console.log('Incoming call offer received!');
         setIsReceivingCall(true);
+        toast({
+          title: 'Incoming call',
+          description: `You have an incoming call from ${chatDetails?.name || 'a user'}`
+        });
       }
     });
     return () => {
@@ -511,8 +573,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         <div className="flex items-center space-x-1">
           {/* Add Call button for direct chats */}
           {chatDetails.type === 'direct' && (
-            <Button variant="ghost" size="icon" className="text-yuhu-primary" onClick={startCall} title="Start Call">
-              <Phone className="h-5 w-5" />
+            <Button variant="ghost" size="icon" className="text-yuhu-primary" onClick={startCall}>
+              <Video className="h-5 w-5" />
             </Button>
           )}
           <DropdownMenu>

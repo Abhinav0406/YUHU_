@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { MessageSquare, User, Settings, LogOut, UserPlus, Menu, X, MoreVertical } from 'lucide-react';
+import { MessageSquare, User, Settings, LogOut, UserPlus, Menu, X, MoreVertical, Phone } from 'lucide-react';
 import { Dialog, DialogTrigger, DialogContent } from '@/components/ui/dialog';
 import UserExplorerTabs from './UserExplorer';
 import { useState } from 'react';
@@ -80,15 +80,27 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
       {isAuthenticated ? (
         <>
           {/* Mobile Menu Button (right side) */}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="md:hidden"
-            onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
-            aria-label="Toggle menu"
-          >
-            {isMobileMenuOpen ? <X className="h-6 w-6" /> : <MoreVertical className="h-6 w-6" />}
-          </Button>
+          <div className="flex items-center md:hidden ml-auto">
+            <Button
+              variant="ghost"
+              size="icon"
+              asChild
+              title="Call History"
+              aria-label="Call History"
+            >
+              <Link to="/call-history">
+                <Phone className="h-5 w-5" />
+              </Link>
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              aria-label="Toggle menu"
+            >
+              {isMobileMenuOpen ? <X className="h-6 w-6" /> : <MoreVertical className="h-6 w-6" />}
+            </Button>
+          </div>
 
           {/* Desktop Navigation */}
           <div className="hidden md:flex items-center space-x-4">
@@ -103,6 +115,11 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
                 <Link to="/profile">
                   <User className="h-5 w-5 mr-1" />
                   <span>Profile</span>
+                </Link>
+              </Button>
+              <Button variant="ghost" size="sm" className="text-gray-600" asChild title="Call History" aria-label="Call History">
+                <Link to="/call-history">
+                  <Phone className="h-5 w-5" />
                 </Link>
               </Button>
             </nav>
@@ -150,6 +167,11 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
                   <Link to="/settings" className="flex items-center cursor-pointer">
                     <Settings className="h-4 w-4 mr-2" />
                     <span>Settings</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/call-history" className="flex items-center cursor-pointer">
+                    <span>Call History</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -200,6 +222,11 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
                   <Link to="/settings" onClick={() => setIsMobileMenuOpen(false)}>
                     <Settings className="h-5 w-5 mr-2" />
                     Settings
+                  </Link>
+                </Button>
+                <Button className="w-full py-3 rounded-xl bg-zinc-800 text-white hover:bg-yuhu-primary/60 transition" asChild>
+                  <Link to="/call-history" onClick={() => setIsMobileMenuOpen(false)}>
+                    <span>Call History</span>
                   </Link>
                 </Button>
                 <Button className="w-full py-3 rounded-xl bg-red-600 text-white mt-auto hover:bg-red-700 transition" onClick={handleLogout}>

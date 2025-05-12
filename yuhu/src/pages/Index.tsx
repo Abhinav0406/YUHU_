@@ -5,6 +5,7 @@ import Layout from '@/components/Layout';
 import AuthForm from '@/components/AuthForm';
 import { Button } from '@/components/ui/button';
 import { MessageSquare, Users, Calendar, Bookmark, FileText } from 'lucide-react';
+import CallHistory from './CallHistory';
 
 const Index = () => {
   const { isAuthenticated } = useAuth();
