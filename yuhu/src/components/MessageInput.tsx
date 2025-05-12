@@ -42,21 +42,23 @@ const MessageInput: React.FC<MessageInputProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
     
-    // Validate file size (max 5MB)
-    if (file.size > 5 * 1024 * 1024) {
+    // Validate file size (max 10MB)
+    if (file.size > 10 * 1024 * 1024) {
       toast({
         title: "File too large",
-        description: "Please select an image smaller than 5MB",
+        description: "Please select a file smaller than 10MB",
         variant: "destructive"
       });
       return;
     }
 
     // Validate file type
-    if (!file.type.startsWith('image/')) {
+    const isImage = file.type.startsWith('image/');
+    const isPdf = file.type === 'application/pdf';
+    if (!isImage && !isPdf) {
       toast({
         title: "Invalid file type",
-        description: "Please select an image file",
+        description: "Please select an image or PDF file",
         variant: "destructive"
       });
       return;
@@ -66,18 +68,18 @@ const MessageInput: React.FC<MessageInputProps> = ({
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
-      const { data, error } = await supabase.storage.from('chat-images').upload(fileName, file);
+      const { data, error } = await supabase.storage.from('chat-files').upload(fileName, file);
       
       if (error) {
         throw new Error(error.message);
       }
 
-      const { data: urlData } = supabase.storage.from('chat-images').getPublicUrl(fileName);
-      onSendMessage({ type: 'image', content: urlData.publicUrl });
+      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(fileName);
+      onSendMessage({ type: isImage ? 'image' : 'pdf', content: urlData.publicUrl, fileName: file.name });
     } catch (error) {
       toast({
         title: "Upload failed",
-        description: error instanceof Error ? error.message : "Failed to upload image. Please try again.",
+        description: error instanceof Error ? error.message : "Failed to upload file. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -181,7 +183,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
         </Button>
         <input
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf"
           ref={fileInputRef}
           className="hidden"
           onChange={handleFileChange}

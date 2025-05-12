@@ -620,11 +620,39 @@ export async function getOrCreateDirectChatByEmail(currentUserEmail: string, oth
   return newChat.id; // always return the chat ID
 }
 
-export async function deleteMessage(messageId: string): Promise<boolean> {
+export async function deleteMessage(messageId: string, fileUrl?: string): Promise<boolean> {
+  // 1. Delete the message from the table
   const { error } = await supabase
     .from('messages')
     .delete()
     .eq('id', messageId);
+
+  // 2. If it's a file message, delete the file from storage
+  if (fileUrl) {
+    let bucket = '';
+    let path = '';
+    const urlMatch = fileUrl.match(/storage\/v1\/object\/public\/([^/]+)\/(.+)$/) || fileUrl.match(/storage\/v1\/object\/public\/([^/]+)\/(.+)$/);
+    if (urlMatch && urlMatch[1] && urlMatch[2]) {
+      bucket = urlMatch[1];
+      path = urlMatch[2].split('?')[0];
+    } else {
+      // fallback for public url
+      const parts = fileUrl.split('/storage/v1/object/public/');
+      if (parts[1]) {
+        const [bucketAndPath] = parts[1].split('?');
+        const [b, ...p] = bucketAndPath.split('/');
+        bucket = b;
+        path = p.join('/');
+      }
+    }
+    console.log('Deleting from storage:', bucket, path);
+    if (bucket && path) {
+      const { data: storageData, error: storageError } = await supabase.storage.from(bucket).remove([path]);
+      if (storageError) {
+        console.error('Error deleting file from storage:', storageError);
+      }
+    }
+  }
 
   if (error) {
     console.error('Error deleting message:', error);

@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { MoreVertical, Trash2, Play, Pause } from 'lucide-react';
+import { MoreVertical, Trash2, Play, Pause, FileText } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -70,7 +70,7 @@ const Message: React.FC<MessageProps> = ({
   }, [type, text]);
 
   const deleteMessageMutation = useMutation({
-    mutationFn: () => deleteMessage(id),
+    mutationFn: () => deleteMessage(id, (type === 'voice' || type === 'image' || type === 'pdf') ? text : undefined),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
       setIsDeleteDialogOpen(false);
@@ -125,7 +125,28 @@ const Message: React.FC<MessageProps> = ({
         </div>
       );
     }
-
+    if (type === 'image') {
+      return (
+        <div className="max-w-xs md:max-w-md">
+          <img src={text} alt="sent image" className="rounded-lg max-w-full max-h-60 border border-zinc-300 dark:border-zinc-700" />
+        </div>
+      );
+    }
+    if (type === 'pdf') {
+      return (
+        <div className="flex items-center gap-2 px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl border border-zinc-300 dark:border-zinc-700 max-w-xs md:max-w-md">
+          <FileText className="h-6 w-6 text-yuhu-primary" />
+          <a
+            href={text}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-yuhu-primary underline break-all"
+          >
+            Open PDF
+          </a>
+        </div>
+      );
+    }
     return <p className="text-sm whitespace-pre-line break-words">{text}</p>;
   };
   
