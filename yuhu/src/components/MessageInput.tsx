@@ -2,7 +2,7 @@ import { useState, useRef } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { Send, Paperclip, Smile, Loader2 } from 'lucide-react';
+import { Send, Paperclip, Smile, Loader2, Mic, Square } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 
@@ -17,7 +17,12 @@ const MessageInput: React.FC<MessageInputProps> = ({
 }) => {
   const [message, setMessage] = useState('');
   const [uploading, setUploading] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingTime, setRecordingTime] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const recordingTimerRef = useRef<NodeJS.Timeout>();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -81,6 +86,85 @@ const MessageInput: React.FC<MessageInputProps> = ({
     }
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const fileName = `voice-${Date.now()}.webm`;
+        
+        setUploading(true);
+        try {
+          const { data, error } = await supabase.storage
+            .from('voice-messages')
+            .upload(fileName, audioBlob);
+
+          if (error) throw error;
+
+          const { data: urlData } = supabase.storage
+            .from('voice-messages')
+            .getPublicUrl(fileName);
+
+          onSendMessage({ type: 'voice', content: urlData.publicUrl });
+        } catch (error) {
+          console.error('Voice message upload error:', error);
+          toast({
+            title: "Upload failed",
+            description: "Failed to upload voice message. Please try again.",
+            variant: "destructive"
+          });
+        } finally {
+          setUploading(false);
+        }
+
+        // Stop all tracks
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+      setRecordingTime(0);
+      
+      // Start timer
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingTime(prev => prev + 1);
+      }, 1000);
+    } catch (error) {
+      toast({
+        title: "Recording failed",
+        description: "Could not access microphone. Please check permissions.",
+        variant: "destructive"
+      });
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+      if (recordingTimerRef.current) {
+        clearInterval(recordingTimerRef.current);
+      }
+      setRecordingTime(0);
+    }
+  };
+
+  const formatTime = (seconds: number) => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, '0')}`;
+  };
+
   return (
     <form onSubmit={handleSubmit} className="border-t p-3 bg-background">
       <div className="flex items-end gap-2">
@@ -113,10 +197,33 @@ const MessageInput: React.FC<MessageInputProps> = ({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            disabled={disabled || uploading}
+            disabled={disabled || uploading || isRecording}
             rows={1}
           />
+          {isRecording && (
+            <div className="absolute bottom-2 right-2 text-sm text-red-500">
+              {formatTime(recordingTime)}
+            </div>
+          )}
         </div>
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "flex-shrink-0",
+            isRecording ? "text-red-500 hover:text-red-600" : "text-muted-foreground hover:text-foreground"
+          )}
+          onClick={isRecording ? stopRecording : startRecording}
+          disabled={disabled || uploading}
+        >
+          {isRecording ? (
+            <Square className="h-5 w-5" />
+          ) : (
+            <Mic className="h-5 w-5" />
+          )}
+          <span className="sr-only">{isRecording ? "Stop Recording" : "Record Voice Message"}</span>
+        </Button>
         <Button
           type="button"
           variant="ghost"
@@ -134,7 +241,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
             "flex-shrink-0",
             message.trim() ? "bg-yuhu-primary hover:bg-yuhu-dark" : "bg-muted text-muted-foreground hover:bg-muted"
           )}
-          disabled={(!message.trim() && !uploading) || disabled}
+          disabled={(!message.trim() && !uploading) || disabled || isRecording}
         >
           {disabled || uploading ? (
             <Loader2 className="h-4 w-4 animate-spin" />

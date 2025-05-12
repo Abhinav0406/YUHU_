@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { MoreVertical, Trash2 } from 'lucide-react';
+import { MoreVertical, Trash2, Play, Pause } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,7 @@ interface MessageProps {
   isFirst?: boolean;
   isConsecutive?: boolean;
   chatId: string;
+  type?: string;
 }
 
 const Message: React.FC<MessageProps> = ({
@@ -40,11 +41,31 @@ const Message: React.FC<MessageProps> = ({
   isFirst = true,
   isConsecutive = false,
   chatId,
+  type = 'text'
 }) => {
   const { user } = useAuth();
   const isMe = senderId === user?.id;
   const queryClient = useQueryClient();
   const [isDeleteDialogOpen, setIsDeleteDialogOpen] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [duration, setDuration] = useState<string>('');
+  const audioRef = React.useRef<HTMLAudioElement | null>(null);
+
+  useEffect(() => {
+    if (type === 'voice' && text) {
+      const audio = new window.Audio(text);
+      audio.addEventListener('loadedmetadata', () => {
+        const dur = audio.duration;
+        if (!isNaN(dur)) {
+          const mins = Math.floor(dur / 60);
+          const secs = Math.floor(dur % 60);
+          setDuration(`${mins}:${secs.toString().padStart(2, '0')}`);
+        }
+      });
+      // Preload metadata
+      audio.load();
+    }
+  }, [type, text]);
 
   const deleteMessageMutation = useMutation({
     mutationFn: () => deleteMessage(id),
@@ -56,6 +77,55 @@ const Message: React.FC<MessageProps> = ({
 
   const handleDelete = () => {
     setIsDeleteDialogOpen(true);
+  };
+
+  const togglePlay = () => {
+    if (!audioRef.current) {
+      audioRef.current = new Audio(text);
+      audioRef.current.onended = () => setIsPlaying(false);
+    }
+
+    if (isPlaying) {
+      audioRef.current.pause();
+    } else {
+      audioRef.current.play();
+    }
+    setIsPlaying(!isPlaying);
+  };
+
+  const renderMessageContent = () => {
+    if (type === 'voice') {
+      return (
+        <div className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-zinc-900 rounded-xl border border-yuhu-primary/30 max-w-xs md:max-w-md">
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-9 w-9 rounded-full bg-white dark:bg-zinc-800 border border-yuhu-primary text-yuhu-primary shadow"
+            onClick={togglePlay}
+            style={{ zIndex: 2 }}
+          >
+            {isPlaying ? (
+              <Pause className="h-5 w-5" />
+            ) : (
+              <Play className="h-5 w-5" />
+            )}
+          </Button>
+          <div className="flex-1 flex items-center gap-2">
+            <svg height="24" width="60" className="text-yuhu-primary">
+              <polyline
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                points="0,12 5,8 10,16 15,6 20,18 25,8 30,16 35,6 40,18 45,8 50,16 55,12 60,12"
+              />
+            </svg>
+            <span className="text-xs text-zinc-500 font-mono min-w-[32px] text-right">{duration || '0:00'}</span>
+          </div>
+        </div>
+      );
+    }
+
+    return <p className="text-sm whitespace-pre-line break-words">{text}</p>;
   };
   
   return (
@@ -77,7 +147,6 @@ const Message: React.FC<MessageProps> = ({
         
         {!isMe && !isFirst && <div className="w-7 mr-2" />}
         
-        {/* Sent message: show menu just left of the bubble */}
         {isMe ? (
           <>
             <div className="flex items-end mr-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
@@ -112,10 +181,10 @@ const Message: React.FC<MessageProps> = ({
                     "max-w-xs md:max-w-md break-words whitespace-pre-line"
                   )}
                 >
-                  <p className="text-sm whitespace-pre-line break-words">{text}</p>
+                  {renderMessageContent()}
                 </div>
               </div>
-              <div className="flex items-center gap-1 text-[10px] px-2 justify-end text-muted-foreground">
+              <div className="flex items-center gap-1 text-[10px] px-2 justify-end text-muted-foreground mt-1">
                 <span>{time}</span>
                 {status === 'read' && (
                   <span className="text-yuhu-primary">• Read</span>
@@ -139,10 +208,10 @@ const Message: React.FC<MessageProps> = ({
                   "max-w-xs md:max-w-md break-words whitespace-pre-line"
                 )}
               >
-                <p className="text-sm whitespace-pre-line break-words">{text}</p>
+                {renderMessageContent()}
               </div>
             </div>
-            <div className="flex items-center gap-1 text-[10px] px-2 justify-start text-muted-foreground">
+            <div className="flex items-center gap-1 text-[10px] px-2 justify-start text-muted-foreground mt-1">
               <span>{time}</span>
             </div>
           </div>

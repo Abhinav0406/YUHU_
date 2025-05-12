@@ -101,16 +101,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     }
   };
   
-  const handleSendMessage = (msg: string) => {
+  const handleSendMessage = (msg: string | { type: string; content: string }) => {
     if (!activeChatId || !user) return;
-    if (!msg.trim()) return;
-    
-    sendMessageMutation.mutate({
-      chatId: activeChatId,
-      senderId: user.id,
-      text: msg.trim(),
-    });
-    
+
+    // Handle text message
+    if (typeof msg === 'string') {
+      if (!msg.trim()) return;
+      sendMessageMutation.mutate({
+        chatId: activeChatId,
+        senderId: user.id,
+        text: msg.trim(),
+      });
+    } else if (typeof msg === 'object' && msg.type && msg.content) {
+      // Handle voice/image message
+      sendMessageMutation.mutate({
+        chatId: activeChatId,
+        senderId: user.id,
+        text: { type: msg.type, content: msg.content },
+      });
+    }
+
     setTimeout(() => {
       scrollToBottom();
     }, 100);

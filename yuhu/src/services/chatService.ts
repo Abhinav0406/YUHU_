@@ -240,6 +240,7 @@ export async function getMessages(chatId: string, userId: string): Promise<Messa
       text: message.text,
       time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
       status: message.status,
+      type: message.type,
       sender: senderProfile || {
         id: message.sender_id,
         name: 'Unknown',
@@ -253,14 +254,15 @@ export async function getMessages(chatId: string, userId: string): Promise<Messa
   return messages;
 }
 
-export async function sendMessage(chatId: string, senderId: string, text: string): Promise<Message | null> {
+export async function sendMessage(chatId: string, senderId: string, text: string | { type: string; content: string }): Promise<Message | null> {
   // Create the message
   const { data: message, error } = await supabase
     .from('messages')
     .insert({
       chat_id: chatId,
       sender_id: senderId,
-      text,
+      text: typeof text === 'string' ? text : text.content,
+      type: typeof text === 'string' ? 'text' : text.type,
       status: 'sent',
       created_at: new Date().toISOString()
     })
@@ -290,6 +292,7 @@ export async function sendMessage(chatId: string, senderId: string, text: string
     text: message.text,
     time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
     status: message.status,
+    type: message.type,
     sender: {
       id: senderId,
       name: profile.full_name || profile.username,
