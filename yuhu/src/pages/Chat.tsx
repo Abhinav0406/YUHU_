@@ -170,7 +170,8 @@ const Chat = () => {
                 if (window.innerWidth < 768) setSidebarOpen(true);
               }}
             >
-              Select a user to start chatting.
+            tap here to start chatting.
+                         
             </div>
           )}
         </section>
