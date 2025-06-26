@@ -99,11 +99,18 @@
   }
 
   .chat-bubble-sent {
-    @apply bg-yuhu-primary text-white;
+    @apply bg-gradient-to-r from-blue-900 to-purple-900 text-white shadow-lg;
   }
   
   .chat-bubble-received {
-    @apply bg-muted text-foreground;
+    @apply bg-zinc-900/90 text-white shadow-lg backdrop-blur-sm;
+  }
+
+  /* Make the time text inside message bubbles darker */
+  .chat-bubble .message-time,
+  .chat-bubble-received .message-time,
+  .chat-bubble-sent .message-time {
+    @apply text-gray-200;
   }
 
   .chat-bubble:hover {

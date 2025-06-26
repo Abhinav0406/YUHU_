@@ -113,11 +113,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         text: msg.trim(),
       });
     } else if (typeof msg === 'object' && msg.type && msg.content) {
-      // Handle voice/image message
+      // Handle voice/image message - convert to string for the API
       sendMessageMutation.mutate({
         chatId: activeChatId,
         senderId: user.id,
-        text: { type: msg.type, content: msg.content },
+        text: JSON.stringify({ type: msg.type, content: msg.content }),
       });
     }
 
@@ -288,10 +288,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       chat_id: activeChatId,
       duration: null
     });
-    toast({
-      title: 'Call accepted',
-      description: 'You accepted the call.'
-    });
+    toast('Call accepted');
     await setupMediaAndConnection(false);
   };
   // End call: reset start time and notify other party
@@ -342,10 +339,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         chat_id: activeChatId,
         duration: null
       });
-      toast({
-        title: 'Missed call',
-        description: `You missed a call from ${chatDetails?.name || 'a user'}`
-      });
+      toast(`You missed a call from ${chatDetails?.name || 'a user'}`);
     }
   };
 
@@ -492,10 +486,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       if (msg.type === 'offer') {
         console.log('Incoming call offer received!');
         setIsReceivingCall(true);
-        toast({
-          title: 'Incoming call',
-          description: `You have an incoming call from ${chatDetails?.name || 'a user'}`
-        });
+        toast(`You have an incoming call from ${chatDetails?.name || 'a user'}`);
       }
     });
     return () => {
@@ -561,7 +552,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   }
   
   return (
-    <div className="flex flex-col h-full w-full max-w-full bg-background">
+    <div className="flex flex-col h-full w-full max-w-full bg-background bg-[url('/images/chat2.jpg')] bg-cover bg-center bg-no-repeat bg-opacity-10">
       {/* Chat header */}
       <div className="border-b p-2 sm:p-3 flex items-center justify-between min-h-[56px] sm:min-h-[64px]">
         <div className="flex items-center min-w-0 cursor-pointer" onClick={handleShowProfile}>

@@ -109,7 +109,7 @@ export async function getChats(userId: string): Promise<Chat[]> {
       if (!messageError && messages && messages.length > 0) {
         lastMessage = {
           text: messages[0].text,
-          time: new Date(messages[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date(messages[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
           isRead: messages[0].status === 'read' || messages[0].sender_id === userId
         };
       }
@@ -148,7 +148,7 @@ export async function getChats(userId: string): Promise<Chat[]> {
       if (!messageError && messages && messages.length > 0) {
         lastMessage = {
           text: messages[0].text,
-          time: new Date(messages[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          time: new Date(messages[0].created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
           isRead: messages[0].status === 'read' || messages[0].sender_id === userId
         };
       }
@@ -238,7 +238,7 @@ export async function getMessages(chatId: string, userId: string): Promise<Messa
       id: message.id,
       senderId: message.sender_id,
       text: message.text,
-      time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+      time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
       status: message.status,
       type: message.type,
       sender: senderProfile || {
@@ -290,7 +290,7 @@ export async function sendMessage(chatId: string, senderId: string, text: string
     id: message.id,
     senderId: message.sender_id,
     text: message.text,
-    time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+    time: new Date(message.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true }),
     status: message.status,
     type: message.type,
     sender: {

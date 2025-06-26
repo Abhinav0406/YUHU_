@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
@@ -19,23 +19,79 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [recordingTime, setRecordingTime] = useState(0);
+  const [shouldFocus, setShouldFocus] = useState(false);
+  const [lastSentTime, setLastSentTime] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout>();
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!message.trim() || disabled) return;
-    onSendMessage(message.trim());
-    setMessage('');
-  };
+  // Aggressive focus restoration
+  useEffect(() => {
+    if (shouldFocus && textareaRef.current) {
+      const focusTextarea = () => {
+        if (textareaRef.current) {
+          textareaRef.current.focus();
+          textareaRef.current.setSelectionRange(
+            textareaRef.current.value.length,
+            textareaRef.current.value.length
+          );
+        }
+      };
+
+      // Multiple timing strategies
+      focusTextarea(); // Immediate
+      requestAnimationFrame(focusTextarea); // Next frame
+      setTimeout(focusTextarea, 50); // Short delay
+      setTimeout(focusTextarea, 150); // After scroll
+      setTimeout(focusTextarea, 300); // Final attempt
+
+      setShouldFocus(false);
+    }
+  }, [shouldFocus]);
+
+  // Monitor for focus loss and restore if it was recently sent
+  useEffect(() => {
+    const handleFocusOut = (e: FocusEvent) => {
+      const now = Date.now();
+      if (now - lastSentTime < 1000 && e.target === textareaRef.current) {
+        // Focus was lost within 1 second of sending, restore it
+        setTimeout(() => {
+          textareaRef.current?.focus();
+        }, 10);
+      }
+    };
+
+    const textarea = textareaRef.current;
+    if (textarea) {
+      textarea.addEventListener('focusout', handleFocusOut);
+      return () => textarea.removeEventListener('focusout', handleFocusOut);
+    }
+  }, [lastSentTime]);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSubmit(e);
+      e.stopPropagation();
+      handleSendMessage();
     }
+  };
+
+  const handleSendMessage = () => {
+    if (!message.trim() || disabled) return;
+    
+    const currentMessage = message.trim();
+    setLastSentTime(Date.now());
+    onSendMessage(currentMessage);
+    setMessage('');
+    setShouldFocus(true);
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    handleSendMessage();
   };
 
   const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -75,7 +131,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
       }
 
       const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(fileName);
-      onSendMessage({ type: isImage ? 'image' : 'pdf', content: urlData.publicUrl, fileName: file.name });
+      onSendMessage({ type: isImage ? 'image' : 'pdf', content: urlData.publicUrl });
     } catch (error) {
       toast({
         title: "Upload failed",
@@ -167,8 +223,19 @@ const MessageInput: React.FC<MessageInputProps> = ({
     return `${mins}:${secs.toString().padStart(2, '0')}`;
   };
 
+  // Restore focus when shouldFocus is true
+  useEffect(() => {
+    if (shouldFocus && textareaRef.current) {
+      // Use a longer delay to ensure it happens after scrollToBottom
+      setTimeout(() => {
+        textareaRef.current?.focus();
+      }, 150);
+      setShouldFocus(false);
+    }
+  }, [shouldFocus]);
+
   return (
-    <form onSubmit={handleSubmit} className="border-t p-3 bg-background">
+    <form onSubmit={handleFormSubmit} className="border-t p-3 bg-background">
       <div className="flex items-end gap-2">
         <Button
           type="button"
@@ -201,6 +268,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
             onKeyDown={handleKeyDown}
             disabled={disabled || uploading || isRecording}
             rows={1}
+            ref={textareaRef}
           />
           {isRecording && (
             <div className="absolute bottom-2 right-2 text-sm text-red-500">
@@ -237,13 +305,14 @@ const MessageInput: React.FC<MessageInputProps> = ({
           <span className="sr-only">Emoji</span>
         </Button>
         <Button
-          type="submit"
+          type="button"
           size="icon"
           className={cn(
             "flex-shrink-0",
             message.trim() ? "bg-yuhu-primary hover:bg-yuhu-dark" : "bg-muted text-muted-foreground hover:bg-muted"
           )}
           disabled={(!message.trim() && !uploading) || disabled || isRecording}
+          onClick={handleSendMessage}
         >
           {disabled || uploading ? (
             <Loader2 className="h-4 w-4 animate-spin" />

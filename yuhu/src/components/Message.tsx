@@ -207,7 +207,7 @@ const Message: React.FC<MessageProps> = ({
                 </div>
               </div>
               <div className="flex items-center gap-1 text-[10px] px-2 justify-end text-muted-foreground mt-1">
-                <span>{time}</span>
+                <span className="message-time">{time}</span>
                 {status === 'read' && (
                   <span className="text-yuhu-primary">• Read</span>
                 )}
@@ -234,7 +234,7 @@ const Message: React.FC<MessageProps> = ({
               </div>
             </div>
             <div className="flex items-center gap-1 text-[10px] px-2 justify-start text-muted-foreground mt-1">
-              <span>{time}</span>
+              <span className="message-time">{time}</span>
             </div>
           </div>
         )}
