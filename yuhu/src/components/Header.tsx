@@ -12,6 +12,8 @@ import {
 import { MessageSquare, User, Settings, LogOut, UserPlus, Menu, X, MoreVertical, Phone } from 'lucide-react';
 import { Dialog, DialogTrigger, DialogContent } from '@/components/ui/dialog';
 import UserExplorerTabs from './UserExplorer';
+import NotificationBadge from './NotificationBadge';
+import NotificationCenter from './NotificationCenter';
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
 
@@ -81,6 +83,7 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
         <>
           {/* Mobile Menu Button (right side) */}
           <div className="flex items-center md:hidden ml-auto">
+            <NotificationCenter />
             <Button
               variant="ghost"
               size="icon"
@@ -123,6 +126,7 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
                 </Link>
               </Button>
             </nav>
+            <NotificationCenter />
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="text-yuhu-primary" title="Add Friend">
@@ -172,6 +176,11 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
                 <DropdownMenuItem asChild>
                   <Link to="/call-history" className="flex items-center cursor-pointer">
                     <span>Call History</span>
+                  </Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link to="/notifications" className="flex items-center cursor-pointer">
+                    <span>Notification Settings</span>
                   </Link>
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
@@ -227,6 +236,11 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
                 <Button className="w-full py-3 rounded-xl bg-zinc-800 text-white hover:bg-yuhu-primary/60 transition" asChild>
                   <Link to="/call-history" onClick={() => setIsMobileMenuOpen(false)}>
                     <span>Call History</span>
+                  </Link>
+                </Button>
+                <Button className="w-full py-3 rounded-xl bg-zinc-800 text-white hover:bg-yuhu-primary/60 transition" asChild>
+                  <Link to="/notifications" onClick={() => setIsMobileMenuOpen(false)}>
+                    <span>Notification Settings</span>
                   </Link>
                 </Button>
                 <Button className="w-full py-3 rounded-xl bg-red-600 text-white mt-auto hover:bg-red-700 transition" onClick={handleLogout}>

@@ -21,6 +21,7 @@ import UserProfile from './UserProfile';
 import { subscribeToSignaling, sendSignal, SignalMessage } from '@/lib/webrtcSignaling';
 import { getIceServers } from '@/lib/iceServers';
 import { toast } from '@/components/ui/sonner';
+import { notificationService } from '@/services/notificationService';
 
 interface ChatWindowProps {
   chatId?: string;
@@ -129,9 +130,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   // Real-time subscription for new messages (all chats)
   useEffect(() => {
     // Request notification permission on mount
-    if (Notification && Notification.permission !== 'granted') {
-      Notification.requestPermission();
-    }
+    notificationService.requestPermission();
 
     const channel = supabase
       .channel('realtime:messages')
@@ -145,23 +144,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         async (payload) => {
           const newMsg = payload.new;
           if (newMsg && user && newMsg.sender_id !== user.id) {
-            // Show in-app toast
-            let senderName = 'Someone';
-            if (newMsg.sender_name) {
-              senderName = newMsg.sender_name;
-            }
-            toast(`${senderName}: ${newMsg.text}`);
-
-            // Show browser notification
-            if (Notification && Notification.permission === 'granted') {
-              let iconUrl = '/chat-icon.png'; // Default icon path (place your icon in public folder)
-              if (newMsg.sender_avatar) {
-                iconUrl = newMsg.sender_avatar;
-              }
-              new Notification(`${senderName}: ${newMsg.text}`, {
-                icon: iconUrl
-              });
-            }
+            // Use the notification service for better notification handling
+            await notificationService.showMessageNotification(
+              newMsg.sender_name || 'Someone',
+              newMsg.text,
+              newMsg.chat_id,
+              newMsg.sender_avatar
+            );
           }
           // Invalidate messages for the relevant chat
           if (newMsg && newMsg.chat_id) {
@@ -486,13 +475,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       if (msg.type === 'offer') {
         console.log('Incoming call offer received!');
         setIsReceivingCall(true);
-        toast(`You have an incoming call from ${chatDetails?.name || 'a user'}`);
+        
+        // Use notification service for call notifications
+        notificationService.showCallNotification(
+          chatDetails?.name || 'Someone',
+          true, // isIncoming
+          activeChatId,
+          chatDetails?.avatar
+        );
       }
     });
     return () => {
       unsub();
     };
-  }, [activeChatId, user?.id]);
+  }, [activeChatId, user?.id, chatDetails]);
 
   // Attach video refs on modal open
   useEffect(() => {

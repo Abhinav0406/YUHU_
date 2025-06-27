@@ -10,6 +10,7 @@ import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import CallHistory from "./pages/CallHistory";
+import NotificationSettings from "./components/NotificationSettings";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -34,6 +35,7 @@ const App = () => (
             <Route path="/chat/:chatId" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
             <Route path="/profile" element={<Profile />} />
             <Route path="/call-history" element={<ProtectedRoute><CallHistory /></ProtectedRoute>} />
+            <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>
