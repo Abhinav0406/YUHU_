@@ -29,6 +29,9 @@ interface MessageProps {
   isConsecutive?: boolean;
   chatId: string;
   type?: string;
+  replyTo?: string;
+  replyToMessage?: { id: string; text: string; senderId: string };
+  onReply?: () => void;
 }
 
 const Message: React.FC<MessageProps> = ({
@@ -41,7 +44,10 @@ const Message: React.FC<MessageProps> = ({
   isFirst = true,
   isConsecutive = false,
   chatId,
-  type = 'text'
+  type = 'text',
+  replyTo,
+  replyToMessage,
+  onReply,
 }) => {
   const { user } = useAuth();
   const isMe = senderId === user?.id;
@@ -96,6 +102,21 @@ const Message: React.FC<MessageProps> = ({
   };
 
   const renderMessageContent = () => {
+    let displayText = text;
+    // Try to parse JSON if present
+    if (typeof text === 'string' && text.startsWith('{') && text.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(text);
+        if (parsed && parsed.type === 'text' && parsed.content) {
+          displayText = parsed.content;
+        } else if (parsed && parsed.type && parsed.content) {
+          // For other types, fallback to content
+          displayText = parsed.content;
+        }
+      } catch (e) {
+        // Not JSON, ignore
+      }
+    }
     if (type === 'voice') {
       return (
         <div className="flex items-center gap-3 px-3 py-2 bg-white dark:bg-zinc-900 rounded-xl border border-yuhu-primary/30 max-w-xs md:max-w-md">
@@ -147,9 +168,33 @@ const Message: React.FC<MessageProps> = ({
         </div>
       );
     }
-    return <p className="text-sm whitespace-pre-line break-words">{text}</p>;
+    return <p className="text-sm whitespace-pre-line break-words">{displayText}</p>;
   };
-  
+
+  // Render reply preview if replyTo exists
+  const renderReplyPreview = () => {
+    if (!replyToMessage) return null;
+    let replyText = replyToMessage.text;
+    // Try to parse JSON if present
+    if (typeof replyText === 'string' && replyText.startsWith('{') && replyText.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(replyText);
+        if (parsed && parsed.type === 'text' && parsed.content) {
+          replyText = parsed.content;
+        } else if (parsed && parsed.type && parsed.content) {
+          replyText = parsed.content;
+        }
+      } catch (e) {
+        // Not JSON, ignore
+      }
+    }
+    return (
+      <div className="text-xs bg-muted rounded px-2 py-1 mb-1 text-muted-foreground">
+        Replying to: {replyText}
+      </div>
+    );
+  };
+
   return (
     <>
       <div
@@ -183,6 +228,9 @@ const Message: React.FC<MessageProps> = ({
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onClick={onReply} className="cursor-pointer">
+                    Reply
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-red-600 cursor-pointer hover:bg-red-50"
                     onClick={handleDelete}
@@ -203,6 +251,7 @@ const Message: React.FC<MessageProps> = ({
                     "max-w-xs md:max-w-md break-words whitespace-pre-line"
                   )}
                 >
+                  {renderReplyPreview()}
                   {renderMessageContent()}
                 </div>
               </div>
@@ -215,28 +264,49 @@ const Message: React.FC<MessageProps> = ({
             </div>
           </>
         ) : (
-          <div className={cn("flex flex-col relative")}> 
-            {isFirst && (
-              <div className="text-xs text-muted-foreground ml-1 mb-0.5">
-                {sender.name}
+          <>
+            <div className="flex items-end mr-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-6 w-6 hover:bg-muted/50"
+                  >
+                    <MoreVertical className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuItem onClick={onReply} className="cursor-pointer">
+                    Reply
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+            <div className={cn("flex flex-col relative")}> 
+              {isFirst && (
+                <div className="text-xs text-muted-foreground ml-1 mb-0.5">
+                  {sender.name}
+                </div>
+              )}
+              <div className="flex items-end gap-1">
+                <div
+                  className={cn(
+                    "chat-bubble relative group/message",
+                    "chat-bubble-received",
+                    isConsecutive && "rounded-tl-md",
+                    "max-w-xs md:max-w-md break-words whitespace-pre-line"
+                  )}
+                >
+                  {renderReplyPreview()}
+                  {renderMessageContent()}
+                </div>
               </div>
-            )}
-            <div className="flex items-end gap-1">
-              <div
-                className={cn(
-                  "chat-bubble relative group/message",
-                  "chat-bubble-received",
-                  isConsecutive && "rounded-tl-md",
-                  "max-w-xs md:max-w-md break-words whitespace-pre-line"
-                )}
-              >
-                {renderMessageContent()}
+              <div className="flex items-center gap-1 text-[10px] px-2 justify-start text-muted-foreground mt-1">
+                <span className="message-time">{time}</span>
               </div>
             </div>
-            <div className="flex items-center gap-1 text-[10px] px-2 justify-start text-muted-foreground mt-1">
-              <span className="message-time">{time}</span>
-            </div>
-          </div>
+          </>
         )}
       </div>
 

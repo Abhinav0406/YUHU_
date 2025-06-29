@@ -75,17 +75,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
 
   // Send message mutation
   const sendMessageMutation = useMutation({
-    mutationFn: ({ chatId, senderId, text }: { chatId: string, senderId: string, text: string }) => 
-      sendMessage(chatId, senderId, text),
+    mutationFn: ({ chatId, senderId, text, type, replyTo }: { chatId: string, senderId: string, text: string, type?: string, replyTo?: string }) => 
+      sendMessage(chatId, senderId, text, replyTo),
     onSuccess: (newMessage) => {
       if (newMessage) {
         queryClient.setQueryData(['messages', activeChatId], (oldMessages: any = []) => [
           ...oldMessages, 
           newMessage
         ]);
-        
         // Invalidate chats list to update last message
         queryClient.invalidateQueries({ queryKey: ['chats'] });
+        clearReply(); // <-- Move clearReply here
       }
     }
   });
@@ -102,26 +102,56 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     }
   };
   
+  // Add state for reply
+  const [replyTo, setReplyTo] = useState<string | null>(null);
+  const [replyToMessage, setReplyToMessage] = useState<any>(null);
+
+  // Handler to select a message to reply to
+  const handleReply = (message: any) => {
+    setReplyTo(message.id);
+    setReplyToMessage(message);
+  };
+
+  // Handler to clear reply
+  const clearReply = () => {
+    setReplyTo(null);
+    setReplyToMessage(null);
+  };
+
+  // Update handleSendMessage to include replyTo
   const handleSendMessage = (msg: string | { type: string; content: string }) => {
     if (!activeChatId || !user) return;
 
-    // Handle text message
+    let payload: any = {};
     if (typeof msg === 'string') {
       if (!msg.trim()) return;
-      sendMessageMutation.mutate({
+      payload = {
         chatId: activeChatId,
         senderId: user.id,
         text: msg.trim(),
-      });
+        replyTo,
+      };
     } else if (typeof msg === 'object' && msg.type && msg.content) {
-      // Handle voice/image message - convert to string for the API
-      sendMessageMutation.mutate({
-        chatId: activeChatId,
-        senderId: user.id,
-        text: JSON.stringify({ type: msg.type, content: msg.content }),
-      });
+      // Only use object for non-text types
+      if (msg.type === 'text') {
+        payload = {
+          chatId: activeChatId,
+          senderId: user.id,
+          text: msg.content,
+          replyTo,
+        };
+      } else {
+        payload = {
+          chatId: activeChatId,
+          senderId: user.id,
+          text: JSON.stringify({ type: msg.type, content: msg.content }),
+          type: msg.type,
+          replyTo,
+        };
+      }
     }
-
+    sendMessageMutation.mutate(payload);
+    // clearReply(); <-- Remove from here
     setTimeout(() => {
       scrollToBottom();
     }, 100);
@@ -602,6 +632,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               key={message.id}
               {...message}
               chatId={activeChatId!}
+              onReply={() => handleReply(message)}
             />
           ))}
           {isTyping && (
@@ -627,7 +658,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       <div className="px-1 sm:px-4 pb-2 sm:pb-4 w-full max-w-full">
         <MessageInput 
           onSendMessage={handleSendMessage} 
-          disabled={sendMessageMutation.isPending}
+          disabled={isLoadingMessages}
+          replyTo={replyTo}
+          replyToMessage={replyToMessage}
+          onCancelReply={clearReply}
         />
       </div>
 

@@ -2,18 +2,24 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { Send, Paperclip, Smile, Loader2, Mic, Square } from 'lucide-react';
+import { Send, Paperclip, Smile, Loader2, Mic, Square, X } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 
 interface MessageInputProps {
   onSendMessage: (message: string | { type: string; content: string }) => void;
   disabled?: boolean;
+  replyTo?: string | null;
+  replyToMessage?: any;
+  onCancelReply?: () => void;
 }
 
 const MessageInput: React.FC<MessageInputProps> = ({ 
   onSendMessage,
-  disabled = false
+  disabled = false,
+  replyTo,
+  replyToMessage,
+  onCancelReply
 }) => {
   const [message, setMessage] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -80,10 +86,13 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
   const handleSendMessage = () => {
     if (!message.trim() || disabled) return;
-    
     const currentMessage = message.trim();
     setLastSentTime(Date.now());
-    onSendMessage(currentMessage);
+    if (replyTo) {
+      onSendMessage({ type: 'text', content: currentMessage, replyTo });
+    } else {
+      onSendMessage(currentMessage);
+    }
     setMessage('');
     setShouldFocus(true);
   };
@@ -236,6 +245,16 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
   return (
     <form onSubmit={handleFormSubmit} className="border-t p-3 bg-background">
+      {replyToMessage && (
+        <div className="mb-2 p-2 bg-muted rounded flex items-center justify-between">
+          <div className="text-xs text-muted-foreground truncate max-w-xs">
+            Replying to: <span className="font-semibold">{replyToMessage.sender?.name || 'Message'}</span>: {replyToMessage.text || replyToMessage.content}
+          </div>
+          <Button type="button" size="icon" variant="ghost" onClick={onCancelReply}>
+            <X className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
       <div className="flex items-end gap-2">
         <Button
           type="button"

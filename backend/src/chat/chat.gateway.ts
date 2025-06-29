@@ -7,7 +7,7 @@ export class ChatGateway {
   server!: Server;
 
   @SubscribeMessage('sendMessage')
-  handleMessage(@MessageBody() message: { sender: string; content: string }): void {
+  handleMessage(@MessageBody() message: { sender: string; content: string; replyTo?: string }): void {
     this.server.emit('receiveMessage', message);
   }
 
@@ -25,7 +25,7 @@ export class ChatGateway {
 
   @SubscribeMessage('sendPrivateMessage')
   handlePrivateMessage(
-    @MessageBody() payload: { sender: string; recipient: string; content: string },
+    @MessageBody() payload: { sender: string; recipient: string; content: string; replyTo?: string },
     client: Socket
   ): void {
     const { recipient, ...message } = payload;

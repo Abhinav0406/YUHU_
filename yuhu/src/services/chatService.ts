@@ -32,6 +32,12 @@ export interface Message {
   isFirst?: boolean;
   isConsecutive?: boolean;
   type?: string;
+  replyTo?: string;
+  replyToMessage?: {
+    id: string;
+    text: string;
+    senderId: string;
+  };
 }
 
 export async function getChats(userId: string): Promise<Chat[]> {
@@ -226,14 +232,34 @@ export async function getMessages(chatId: string, userId: string): Promise<Messa
     });
   });
 
+  // Fetch all replyTo messages in one go
+  const replyToIds = messagesData.filter(m => m.replyTo).map(m => m.replyTo);
+  let replyToMap = new Map();
+  if (replyToIds.length > 0) {
+    const { data: replyMessages } = await supabase
+      .from('messages')
+      .select('id, text, sender_id')
+      .in('id', replyToIds);
+    if (replyMessages) {
+      replyToMap = new Map(replyMessages.map(m => [m.id, m]));
+    }
+  }
+
   // Format messages
   const messages = messagesData.map((message, index) => {
     const prevMessage = index > 0 ? messagesData[index - 1] : null;
     const isFirst = !prevMessage || prevMessage.sender_id !== message.sender_id;
     const isConsecutive = !isFirst;
-    
     const senderProfile = profilesMap.get(message.sender_id);
-    
+    let replyToMessage = undefined;
+    if (message.replyTo && replyToMap.has(message.replyTo)) {
+      const replyMsg = replyToMap.get(message.replyTo);
+      replyToMessage = {
+        id: replyMsg.id,
+        text: replyMsg.text,
+        senderId: replyMsg.sender_id
+      };
+    }
     return {
       id: message.id,
       senderId: message.sender_id,
@@ -247,24 +273,35 @@ export async function getMessages(chatId: string, userId: string): Promise<Messa
         avatar: `https://api.dicebear.com/7.x/avataaars/svg?seed=unknown`
       },
       isFirst,
-      isConsecutive
+      isConsecutive,
+      replyTo: message.replyTo,
+      replyToMessage
     };
   });
 
   return messages;
 }
 
-export async function sendMessage(chatId: string, senderId: string, text: string | { type: string; content: string }): Promise<Message | null> {
-  // Create the message
+export async function sendMessage(chatId: string, senderId: string, text: string | { type: string; content: string; replyTo?: string }, replyTo?: string): Promise<Message | null> {
+  // Support for replyTo in text or as argument
+  let msgText = text;
+  let msgType = 'text';
+  let replyToId = replyTo;
+  if (typeof text === 'object') {
+    msgType = text.type;
+    msgText = text.content;
+    if (text.replyTo) replyToId = text.replyTo;
+  }
   const { data: message, error } = await supabase
     .from('messages')
     .insert({
       chat_id: chatId,
       sender_id: senderId,
-      text: typeof text === 'string' ? text : text.content,
-      type: typeof text === 'string' ? 'text' : text.type,
+      text: typeof msgText === 'string' ? msgText : '',
+      type: msgType,
       status: 'sent',
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      replyTo: replyToId || null
     })
     .select()
     .single();
@@ -299,7 +336,8 @@ export async function sendMessage(chatId: string, senderId: string, text: string
       avatar: profile.avatar_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${profile.username}`
     },
     isFirst: true,
-    isConsecutive: false
+    isConsecutive: false,
+    replyTo: message.replyTo
   };
 }
 
