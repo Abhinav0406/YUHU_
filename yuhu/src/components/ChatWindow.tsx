@@ -19,7 +19,7 @@ import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
 import UserProfile from './UserProfile';
 import { subscribeToSignaling, sendSignal, SignalMessage } from '@/lib/webrtcSignaling';
-import { getIceServers } from '@/lib/iceServers';
+import { getIceServers } from '@/services/iceService';
 import { toast } from '@/components/ui/sonner';
 import { notificationService } from '@/services/notificationService';
 
@@ -232,6 +232,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const [isCameraOn, setIsCameraOn] = useState(true);
   const [callStartTime, setCallStartTime] = useState<number | null>(null);
   const [callDuration, setCallDuration] = useState('00:00');
+  const [connectionStatus, setConnectionStatus] = useState<string>('disconnected');
+  const [iceConnectionStatus, setIceConnectionStatus] = useState<string>('disconnected');
+  const [remoteVideoAvailable, setRemoteVideoAvailable] = useState(false);
+  const [showDebug, setShowDebug] = useState(false);
 
   // Update call duration timer
   useEffect(() => {
@@ -327,6 +331,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setIsReceivingCall(false);
     setCallError(null);
     setCallStartTime(null);
+    setConnectionStatus('disconnected');
+    setIceConnectionStatus('disconnected');
+    setRemoteVideoAvailable(false);
+    setShowDebug(false);
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     localStreamRef.current?.getTracks().forEach(track => track.stop());
@@ -365,14 +373,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   // Setup media and peer connection
   const setupMediaAndConnection = async (isCaller: boolean) => {
     try {
+      // Check if WebRTC is supported
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('WebRTC is not supported in this browser');
+      }
+
+      // Check if RTCPeerConnection is supported
+      if (!window.RTCPeerConnection) {
+        throw new Error('RTCPeerConnection is not supported in this browser');
+      }
+
+      console.log('Starting video call setup...');
+      
       // Get local media
-      const localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const localStream = await navigator.mediaDevices.getUserMedia({ 
+        video: true, 
+        audio: true 
+      });
+      
+      console.log('Local media stream obtained:', localStream.getTracks().map(t => t.kind));
       localStreamRef.current = localStream;
+      
       if (localVideoRef.current) {
         localVideoRef.current.srcObject = localStream;
       }
 
       // Get ICE servers from our backend
+      console.log('Fetching ICE servers...');
       const iceServers = await getIceServers();
       console.log('Using ICE servers:', iceServers);
       
@@ -381,7 +408,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       peerConnectionRef.current = pc;
 
       // Add local tracks
-      localStream.getTracks().forEach(track => pc.addTrack(track, localStream));
+      localStream.getTracks().forEach(track => {
+        console.log('Adding local track:', track.kind);
+        pc.addTrack(track, localStream);
+      });
 
       // Handle remote stream
       pc.ontrack = (event) => {
@@ -389,17 +419,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         if (event.streams && event.streams[0]) {
           remoteStreamRef.current = event.streams[0];
           const remoteStream = event.streams[0];
+          
           // Log track types
           const videoTracks = remoteStream.getVideoTracks();
           const audioTracks = remoteStream.getAudioTracks();
-          console.log('Remote stream video tracks:', videoTracks);
-          console.log('Remote stream audio tracks:', audioTracks);
+          console.log('Remote stream video tracks:', videoTracks.length);
+          console.log('Remote stream audio tracks:', audioTracks.length);
+          
           if (videoTracks.length === 0) {
             console.warn('No remote video tracks found!');
+            setRemoteVideoAvailable(false);
+          } else {
+            setRemoteVideoAvailable(true);
           }
           if (audioTracks.length === 0) {
             console.warn('No remote audio tracks found!');
           }
+          
           if (remoteVideoRef.current) {
             remoteVideoRef.current.srcObject = remoteStream;
             remoteVideoRef.current.play().then(() => {
@@ -410,13 +446,14 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           }
         } else {
           console.warn('No remote stream found in ontrack event');
+          setRemoteVideoAvailable(false);
         }
       };
 
       // Handle ICE candidates
       pc.onicecandidate = (event) => {
         if (event.candidate && friendId) {
-          console.log('Sending ICE candidate to', friendId, event.candidate);
+          console.log('Sending ICE candidate to', friendId);
           sendSignal(activeChatId!, {
             type: 'ice',
             from: user.id,
@@ -429,7 +466,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       // Handle connection state changes
       pc.onconnectionstatechange = () => {
         console.log('Connection state:', pc.connectionState);
-        if (pc.connectionState === 'failed') {
+        setConnectionStatus(pc.connectionState);
+        if (pc.connectionState === 'connected') {
+          console.log('WebRTC connection established successfully!');
+          setCallError(null);
+        } else if (pc.connectionState === 'failed') {
           setCallError('Connection failed. Please try again.');
           endCall();
         }
@@ -438,21 +479,30 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       // Handle ICE connection state changes
       pc.oniceconnectionstatechange = () => {
         console.log('ICE connection state:', pc.iceConnectionState);
-        if (pc.iceConnectionState === 'failed') {
+        setIceConnectionStatus(pc.iceConnectionState);
+        if (pc.iceConnectionState === 'connected') {
+          console.log('ICE connection established!');
+        } else if (pc.iceConnectionState === 'failed') {
           setCallError('ICE connection failed. Please check your network connection.');
           endCall();
         }
       };
 
-      // Signaling
+      // Handle signaling state changes
+      pc.onsignalingstatechange = () => {
+        console.log('Signaling state:', pc.signalingState);
+      };
+
+      // Setup signaling subscription
       if (!signalingUnsubRef.current) {
         signalingUnsubRef.current = subscribeToSignaling(activeChatId!, async (msg: SignalMessage) => {
-          console.log('Received signal', msg);
+          console.log('Received signal', msg.type, 'from', msg.from, 'to', msg.to);
           if (msg.to !== user.id) return;
           if (!peerConnectionRef.current && msg.type !== 'hangup') return;
           
-          if (msg.type === 'offer' && !isCaller) {
-            try {
+          try {
+            if (msg.type === 'offer' && !isCaller) {
+              console.log('Handling incoming offer');
               await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
               const answer = await peerConnectionRef.current.createAnswer();
               await peerConnectionRef.current.setLocalDescription(answer);
@@ -462,35 +512,32 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                 to: friendId!,
                 data: answer,
               });
-            } catch (error) {
-              console.error('Error handling offer:', error);
-              setCallError('Failed to handle incoming call. Please try again.');
-              endCall();
-            }
-          } else if (msg.type === 'answer') {
-            try {
+            } else if (msg.type === 'answer' && isCaller) {
+              console.log('Handling incoming answer');
               await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
-            } catch (error) {
-              console.error('Error handling answer:', error);
-              setCallError('Failed to establish call. Please try again.');
+            } else if (msg.type === 'ice') {
+              console.log('Adding ICE candidate');
+              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(msg.data));
+            } else if (msg.type === 'hangup') {
+              console.log('Received hangup signal');
               endCall();
             }
-          } else if (msg.type === 'ice') {
-            try {
-              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(msg.data));
-            } catch (error) {
-              console.error('Error adding ICE candidate:', error);
+          } catch (error) {
+            console.error('Error handling signal:', msg.type, error);
+            if (msg.type === 'offer') {
+              setCallError('Failed to handle incoming call. Please try again.');
+            } else if (msg.type === 'answer') {
+              setCallError('Failed to establish call. Please try again.');
             }
-          } else if (msg.type === 'hangup') {
-            // Handle incoming hangup signal
-            console.log('Received hangup signal');
             endCall();
           }
         });
       }
+
       // Caller: create and send offer
       if (isCaller && friendId) {
         try {
+          console.log('Creating offer as caller');
           const offer = await pc.createOffer();
           await pc.setLocalDescription(offer);
           sendSignal(activeChatId!, {
@@ -710,6 +757,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               {isReceivingCall ? 'Someone is calling you...' : `Duration: ${callDuration}`}
             </div>
             {callError && <div className="text-red-500 mb-2">{callError}</div>}
+            {/* Connection Status Indicators */}
+            {!isReceivingCall && (
+              <div className="flex gap-4 text-xs text-muted-foreground mb-2">
+                <span className={`px-2 py-1 rounded ${connectionStatus === 'connected' ? 'bg-green-600/20 text-green-400' : 'bg-yellow-600/20 text-yellow-400'}`}>
+                  WebRTC: {connectionStatus}
+                </span>
+                <span className={`px-2 py-1 rounded ${iceConnectionStatus === 'connected' ? 'bg-green-600/20 text-green-400' : 'bg-yellow-600/20 text-yellow-400'}`}>
+                  ICE: {iceConnectionStatus}
+                </span>
+              </div>
+            )}
             <div className="flex flex-col sm:flex-row gap-4 w-full justify-center items-center mt-2">
               {/* Local Video/User */}
               <div className="flex flex-col items-center">
@@ -737,10 +795,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                     ref={remoteVideoRef}
                     autoPlay
                     playsInline
-                    className="rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary max-w-full"
+                    className={`rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary max-w-full ${!remoteVideoAvailable ? 'hidden' : ''}`}
                   />
-                  {/* Fallback avatar/initials if remote video is not available */}
-                  {/* Optionally, you can add a state to detect remote video stream and show fallback if needed */}
+                  {!remoteVideoAvailable && (
+                    <div className="w-64 h-64 rounded-2xl bg-zinc-700 flex items-center justify-center text-5xl font-bold text-yuhu-primary shadow-lg max-w-full">
+                      {chatDetails?.name?.[0]?.toUpperCase() || 'F'}
+                    </div>
+                  )}
                   <span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">Friend</span>
                 </div>
                 <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{chatDetails?.name}</div>
@@ -795,6 +856,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                 </svg>
               </Button>
               <Button
+                variant="ghost"
+                size="icon"
+                className="rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow"
+                onClick={() => setShowDebug(!showDebug)}
+                title="Toggle Debug Info"
+              >
+                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-5 h-5">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                </svg>
+              </Button>
+              <Button
                 className="rounded-full bg-red-600 hover:bg-red-700 text-white shadow px-6 font-bold"
                 onClick={endCall}
                 title="End Call"
@@ -802,6 +874,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                 End
               </Button>
             </div>
+            {/* Debug Information */}
+            {showDebug && (
+              <div className="mt-4 p-3 bg-zinc-800/50 rounded-lg text-xs text-left w-full max-w-md">
+                <div className="font-semibold mb-2 text-yuhu-primary">Debug Information:</div>
+                <div className="space-y-1">
+                  <div>WebRTC State: <span className="text-green-400">{connectionStatus}</span></div>
+                  <div>ICE State: <span className="text-green-400">{iceConnectionStatus}</span></div>
+                  <div>Remote Video: <span className={remoteVideoAvailable ? 'text-green-400' : 'text-red-400'}>{remoteVideoAvailable ? 'Available' : 'Not Available'}</span></div>
+                  <div>Local Stream: <span className={localStreamRef.current ? 'text-green-400' : 'text-red-400'}>{localStreamRef.current ? 'Active' : 'Not Active'}</span></div>
+                  <div>Peer Connection: <span className={peerConnectionRef.current ? 'text-green-400' : 'text-red-400'}>{peerConnectionRef.current ? 'Active' : 'Not Active'}</span></div>
+                  <div>Chat ID: <span className="text-blue-400">{activeChatId}</span></div>
+                  <div>Friend ID: <span className="text-blue-400">{friendId}</span></div>
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>

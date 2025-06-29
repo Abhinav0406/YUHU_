@@ -1,5 +1,5 @@
 // Frontend service to fetch ICE servers from our backend
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3001';
+const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
 
 export interface RTCIceServer {
   urls: string | string[];
@@ -9,15 +9,24 @@ export interface RTCIceServer {
 
 export async function getIceServers(): Promise<RTCIceServer[]> {
   try {
+    console.log('Fetching ICE servers from:', `${BACKEND_URL}/api/ice-servers`);
+    
     const response = await fetch(`${BACKEND_URL}/api/ice-servers`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
       credentials: 'include'
     });
 
+    console.log('ICE servers response status:', response.status);
+
     if (!response.ok) {
-      throw new Error('Failed to fetch ICE servers');
+      throw new Error(`Failed to fetch ICE servers: ${response.status} ${response.statusText}`);
     }
 
     const data = await response.json();
+    console.log('ICE servers received:', data);
     
     // If the response includes an error but has fallback servers, use those
     if (data.error && data.fallback) {
@@ -28,10 +37,21 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
     return data;
   } catch (error) {
     console.error('Error fetching ICE servers:', error);
-    // Fallback to public STUN servers if backend fails
+    // Fallback to public STUN servers and OpenRelay TURN servers if backend fails
+    console.log('Using fallback ICE servers due to error');
     return [
       { urls: 'stun:stun.l.google.com:19302' },
-      { urls: 'stun:stun1.l.google.com:19302' }
+      { urls: 'stun:stun1.l.google.com:19302' },
+      { urls: 'stun:stun2.l.google.com:19302' },
+      {
+        urls: [
+          "turn:openrelay.metered.ca:80",
+          "turn:openrelay.metered.ca:443",
+          "turn:openrelay.metered.ca:443?transport=tcp"
+        ],
+        username: "openrelayproject",
+        credential: "openrelayproject"
+      }
     ];
   }
 } 

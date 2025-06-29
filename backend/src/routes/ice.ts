@@ -27,24 +27,49 @@ async function getIceServers(): Promise<any> {
       res.on('end', () => {
         try {
           const parsed = JSON.parse(data);
-          resolve(parsed.v.iceServers);
+          if (parsed.v && parsed.v.iceServers) {
+            console.log('Using Xirsys ICE servers');
+            resolve(parsed.v.iceServers);
+          } else {
+            throw new Error('Invalid Xirsys response format');
+          }
         } catch (e) {
           console.error('Error parsing Xirsys response:', e);
-          // Fallback to public STUN servers
+          // Fallback to public STUN servers and OpenRelay TURN servers
           resolve([
             { urls: 'stun:stun.l.google.com:19302' },
-            { urls: 'stun:stun1.l.google.com:19302' }
+            { urls: 'stun:stun1.l.google.com:19302' },
+            { urls: 'stun:stun2.l.google.com:19302' },
+            {
+              urls: [
+                "turn:openrelay.metered.ca:80",
+                "turn:openrelay.metered.ca:443",
+                "turn:openrelay.metered.ca:443?transport=tcp"
+              ],
+              username: "openrelayproject",
+              credential: "openrelayproject"
+            }
           ]);
         }
       });
     });
 
     req.on('error', (e) => {
-      console.error('Error fetching ICE servers:', e);
-      // Fallback to public STUN servers
+      console.error('Error fetching ICE servers from Xirsys:', e);
+      // Fallback to public STUN servers and OpenRelay TURN servers
       resolve([
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        {
+          urls: [
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turn:openrelay.metered.ca:443?transport=tcp"
+          ],
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        }
       ]);
     });
 
@@ -64,7 +89,17 @@ router.get('/ice-servers', async (req: Request, res: Response) => {
       error: 'Failed to fetch ICE servers',
       fallback: [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        { urls: 'stun:stun2.l.google.com:19302' },
+        {
+          urls: [
+            "turn:openrelay.metered.ca:80",
+            "turn:openrelay.metered.ca:443",
+            "turn:openrelay.metered.ca:443?transport=tcp"
+          ],
+          username: "openrelayproject",
+          credential: "openrelayproject"
+        }
       ]
     });
   }
