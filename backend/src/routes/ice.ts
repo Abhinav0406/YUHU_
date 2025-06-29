@@ -1,7 +1,7 @@
-import { Router } from 'express';
+import { Router, Router as ExpressRouter, Request, Response } from 'express';
 import https from 'https';
 
-const router = Router();
+const router: ExpressRouter = Router();
 
 // Xirsys credentials - should be in environment variables in production
 const XIRSYS_USERNAME = 'Ambica';
@@ -54,7 +54,7 @@ async function getIceServers(): Promise<any> {
 }
 
 // GET /api/ice-servers
-router.get('/ice-servers', async (req, res) => {
+router.get('/ice-servers', async (req: Request, res: Response) => {
   try {
     const iceServers = await getIceServers();
     res.json(iceServers);
@@ -70,4 +70,4 @@ router.get('/ice-servers', async (req, res) => {
   }
 });
 
-export default router; 
+export default router;
