@@ -57,6 +57,10 @@ const Message: React.FC<MessageProps> = ({
   const [duration, setDuration] = useState<string>('');
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
 
+  // Add state for dropdown open
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  let longPressTimer: NodeJS.Timeout | null = null;
+
   useEffect(() => {
     if (type === 'voice' && text) {
       const audio = new window.Audio(text);
@@ -195,6 +199,19 @@ const Message: React.FC<MessageProps> = ({
     );
   };
 
+  // Handler for long press
+  const handleLongPressStart = () => {
+    longPressTimer = setTimeout(() => {
+      setDropdownOpen(true);
+    }, 500); // 500ms for long press
+  };
+  const handleLongPressEnd = () => {
+    if (longPressTimer) {
+      clearTimeout(longPressTimer);
+      longPressTimer = null;
+    }
+  };
+
   return (
     <>
       <div
@@ -202,6 +219,11 @@ const Message: React.FC<MessageProps> = ({
           "flex w-full mb-1 group relative",
           isMe ? "justify-end" : "justify-start"
         )}
+        onTouchStart={handleLongPressStart}
+        onTouchEnd={handleLongPressEnd}
+        onMouseDown={handleLongPressStart}
+        onMouseUp={handleLongPressEnd}
+        onMouseLeave={handleLongPressEnd}
       >
         {!isMe && isFirst && (
           <div className="flex-shrink-0 mr-2 mt-auto">
@@ -217,7 +239,7 @@ const Message: React.FC<MessageProps> = ({
         {isMe ? (
           <>
             <div className="flex items-end mr-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200 z-10">
-              <DropdownMenu>
+              <DropdownMenu open={dropdownOpen} onOpenChange={setDropdownOpen}>
                 <DropdownMenuTrigger asChild>
                   <Button
                     variant="ghost"

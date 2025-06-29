@@ -388,11 +388,28 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         console.log('Received remote track:', event);
         if (event.streams && event.streams[0]) {
           remoteStreamRef.current = event.streams[0];
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = event.streams[0];
-            // Ensure video plays
-            remoteVideoRef.current.play().catch(err => console.error('Error playing remote video:', err));
+          const remoteStream = event.streams[0];
+          // Log track types
+          const videoTracks = remoteStream.getVideoTracks();
+          const audioTracks = remoteStream.getAudioTracks();
+          console.log('Remote stream video tracks:', videoTracks);
+          console.log('Remote stream audio tracks:', audioTracks);
+          if (videoTracks.length === 0) {
+            console.warn('No remote video tracks found!');
           }
+          if (audioTracks.length === 0) {
+            console.warn('No remote audio tracks found!');
+          }
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = remoteStream;
+            remoteVideoRef.current.play().then(() => {
+              console.log('Remote video is playing');
+            }).catch(err => console.error('Error playing remote video:', err));
+          } else {
+            console.warn('remoteVideoRef.current is null');
+          }
+        } else {
+          console.warn('No remote stream found in ontrack event');
         }
       };
 
