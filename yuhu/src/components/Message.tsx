@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { MoreVertical, Trash2, Play, Pause, FileText } from 'lucide-react';
+import { MoreVertical, Trash2, Play, Pause, FileText, Download, X, ZoomIn, ZoomOut } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -13,6 +13,141 @@ import { Button } from '@/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { deleteMessage } from '@/services/chatService';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
+import { Dialog, DialogContent } from '@/components/ui/dialog';
+
+// Image Modal Component
+const ImageModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  imageUrl: string;
+  altText?: string;
+}> = ({ isOpen, onClose, imageUrl, altText = "Image" }) => {
+  const [zoom, setZoom] = useState(1);
+  const [position, setPosition] = useState({ x: 0, y: 0 });
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+
+  // Reset zoom and position when modal opens
+  useEffect(() => {
+    if (isOpen) {
+      setZoom(1);
+      setPosition({ x: 0, y: 0 });
+    }
+  }, [isOpen]);
+
+  // Handle ESC key to close
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    if (isOpen) {
+      document.addEventListener('keydown', handleKeyDown);
+      return () => document.removeEventListener('keydown', handleKeyDown);
+    }
+  }, [isOpen, onClose]);
+
+  const handleDownload = async () => {
+    try {
+      const response = await fetch(imageUrl);
+      const blob = await response.blob();
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `image-${Date.now()}.jpg`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Download failed:', error);
+    }
+  };
+
+  const handleZoomIn = () => setZoom(prev => Math.min(prev * 1.5, 5));
+  const handleZoomOut = () => setZoom(prev => Math.max(prev / 1.5, 0.5));
+
+  const handleMouseDown = (e: React.MouseEvent) => {
+    if (zoom > 1) {
+      setIsDragging(true);
+      setDragStart({ x: e.clientX - position.x, y: e.clientY - position.y });
+    }
+  };
+
+  const handleMouseMove = (e: React.MouseEvent) => {
+    if (isDragging && zoom > 1) {
+      setPosition({
+        x: e.clientX - dragStart.x,
+        y: e.clientY - dragStart.y,
+      });
+    }
+  };
+
+  const handleMouseUp = () => {
+    setIsDragging(false);
+  };
+
+  return (
+    <Dialog open={isOpen} onOpenChange={onClose}>
+      <DialogContent className="max-w-[95vw] max-h-[95vh] p-0 bg-black/90 border-none">
+        <div className="relative w-full h-full flex items-center justify-center">
+          {/* Close button */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className="absolute top-4 right-4 z-10 text-white hover:bg-white/20"
+            onClick={onClose}
+          >
+            <X className="h-6 w-6" />
+          </Button>
+
+          {/* Controls */}
+          <div className="absolute top-4 left-4 z-10 flex gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/20"
+              onClick={handleZoomIn}
+            >
+              <ZoomIn className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/20"
+              onClick={handleZoomOut}
+            >
+              <ZoomOut className="h-5 w-5" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/20"
+              onClick={handleDownload}
+            >
+              <Download className="h-5 w-5" />
+            </Button>
+          </div>
+
+          {/* Image */}
+          <img
+            src={imageUrl}
+            alt={altText}
+            className="max-w-full max-h-full object-contain cursor-move"
+            style={{
+              transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
+              transition: isDragging ? 'none' : 'transform 0.2s ease',
+            }}
+            onMouseDown={handleMouseDown}
+            onMouseMove={handleMouseMove}
+            onMouseUp={handleMouseUp}
+            onMouseLeave={handleMouseUp}
+            draggable={false}
+          />
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+};
 
 interface MessageProps {
   id: string;
@@ -56,6 +191,8 @@ const Message: React.FC<MessageProps> = ({
   const [isPlaying, setIsPlaying] = useState(false);
   const [duration, setDuration] = useState<string>('');
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
+  const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [selectedImageUrl, setSelectedImageUrl] = useState('');
 
   // Add state for dropdown open
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -124,6 +261,11 @@ const Message: React.FC<MessageProps> = ({
     setIsPlaying(!isPlaying);
   };
 
+  const handleImageClick = (imageUrl: string) => {
+    setSelectedImageUrl(imageUrl);
+    setIsImageModalOpen(true);
+  };
+
   const renderMessageContent = () => {
     console.log('Voice message debug:', { type, text });
     
@@ -187,7 +329,15 @@ const Message: React.FC<MessageProps> = ({
         <div className="max-w-xs md:max-w-md space-y-2">
           {parts.map((part, idx) => {
             if (imageRegex.test(part)) {
-              return <img key={idx} src={part} alt="sent image" className="rounded-lg max-w-full max-h-60 border border-zinc-300 dark:border-zinc-700" />;
+              return (
+                <img 
+                  key={idx} 
+                  src={part} 
+                  alt="sent image" 
+                  className="rounded-lg max-w-full max-h-60 border border-zinc-300 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity" 
+                  onClick={() => handleImageClick(part)}
+                />
+              );
             }
             if (audioRegex.test(part)) {
               return <audio key={idx} src={part} controls className="w-full" />;
@@ -202,7 +352,12 @@ const Message: React.FC<MessageProps> = ({
     if (type === 'image') {
       return (
         <div className="max-w-xs md:max-w-md">
-          <img src={text} alt="sent image" className="rounded-lg max-w-full max-h-60 border border-zinc-300 dark:border-zinc-700" />
+          <img 
+            src={text} 
+            alt="sent image" 
+            className="rounded-lg max-w-full max-h-60 border border-zinc-300 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity" 
+            onClick={() => handleImageClick(text)}
+          />
         </div>
       );
     }
@@ -380,6 +535,13 @@ const Message: React.FC<MessageProps> = ({
           </>
         )}
       </div>
+
+      <ImageModal
+        isOpen={isImageModalOpen}
+        onClose={() => setIsImageModalOpen(false)}
+        imageUrl={selectedImageUrl}
+        altText="Chat Image"
+      />
 
       <ConfirmationDialog
         isOpen={isDeleteDialogOpen}
