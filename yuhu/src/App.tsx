@@ -11,6 +11,8 @@ import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import CallHistory from "./pages/CallHistory";
 import NotificationSettings from "./components/NotificationSettings";
+import TestNotifications from "./pages/TestNotifications";
+import TestWebRTC from "./pages/TestWebRTC";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -36,6 +38,8 @@ const App = () => (
             <Route path="/profile" element={<Profile />} />
             <Route path="/call-history" element={<ProtectedRoute><CallHistory /></ProtectedRoute>} />
             <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
+            <Route path="/test-notifications" element={<ProtectedRoute><TestNotifications /></ProtectedRoute>} />
+            <Route path="/test-webrtc" element={<ProtectedRoute><TestWebRTC /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

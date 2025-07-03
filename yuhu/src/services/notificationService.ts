@@ -47,8 +47,20 @@ class NotificationService {
   }
 
   private initializeAudio() {
-    this.audio = new Audio('/assets/notification.mp3');
-    this.audio.preload = 'auto';
+    try {
+      this.audio = new Audio('/assets/call-notification.mp3');
+      this.audio.preload = 'auto';
+      this.audio.volume = 0.3;
+      
+      // Handle audio loading errors gracefully
+      this.audio.addEventListener('error', () => {
+        console.warn('Notification audio file not found, using fallback sound system');
+        this.audio = null;
+      });
+    } catch (error) {
+      console.warn('Failed to initialize audio:', error);
+      this.audio = null;
+    }
   }
 
   async requestPermission(): Promise<boolean> {
@@ -68,24 +80,36 @@ class NotificationService {
   async showNotification(data: NotificationData): Promise<void> {
     const { title, message, type, icon, data: notificationData, clickAction } = data;
 
+    console.log('Showing notification:', { title, message, type, preferences: this.preferences });
+
     // Check if notifications are enabled for this type
     if (!this.shouldShowNotification(type)) {
+      console.log('Notification blocked by preferences for type:', type);
       return;
     }
 
     // Show in-app toast notification
     if (this.preferences.inAppNotifications) {
+      console.log('Showing in-app notification');
       this.showInAppNotification(title, message, type);
+    } else {
+      console.log('In-app notifications disabled');
     }
 
     // Show browser notification
     if (this.preferences.browserNotifications && type !== 'system') {
+      console.log('Showing browser notification');
       await this.showBrowserNotification(title, message, icon, notificationData, clickAction);
+    } else {
+      console.log('Browser notifications disabled or type is system');
     }
 
     // Play sound notification
     if (this.preferences.soundNotifications) {
+      console.log('Playing notification sound');
       this.playNotificationSound(type);
+    } else {
+      console.log('Sound notifications disabled');
     }
   }
 
@@ -104,17 +128,24 @@ class NotificationService {
 
   private showInAppNotification(title: string, message: string, type: string) {
     const icon = this.getNotificationIcon(type);
-    toast(message, {
-      description: title,
-      icon: icon,
-      duration: 5000,
-      action: {
-        label: 'View',
-        onClick: () => {
-          // Handle click action
+    console.log('Calling toast with:', { message, title, icon, type });
+    
+    try {
+      toast(message, {
+        description: title,
+        icon: icon,
+        duration: 5000,
+        action: {
+          label: 'View',
+          onClick: () => {
+            console.log('Notification clicked');
+          },
         },
-      },
-    });
+      });
+      console.log('Toast called successfully');
+    } catch (error) {
+      console.error('Error calling toast:', error);
+    }
   }
 
   private async showBrowserNotification(
@@ -155,10 +186,25 @@ class NotificationService {
     if (!this.preferences.soundNotifications) return;
 
     try {
-      // Try to use the fallback sound system
-      createNotificationSound(type as any);
+      // Try to use the audio file first
+      if (this.audio && this.audio.readyState >= 2) {
+        this.audio.currentTime = 0;
+        this.audio.play().catch(() => {
+          // Fallback to programmatic sound
+          createNotificationSound(type as any);
+        });
+      } else {
+        // Use the programmatic fallback sound system
+        createNotificationSound(type as any);
+      }
     } catch (error) {
       console.warn('Failed to play notification sound:', error);
+      // Try programmatic fallback as last resort
+      try {
+        createNotificationSound(type as any);
+      } catch (fallbackError) {
+        console.warn('Fallback sound also failed:', fallbackError);
+      }
     }
   }
 

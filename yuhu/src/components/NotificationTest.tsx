@@ -1,151 +1,218 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { MessageCircle, Phone, Users, Bell } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Bell, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
 import { notificationService } from '@/services/notificationService';
 import { toast } from '@/components/ui/sonner';
 
 const NotificationTest: React.FC = () => {
+  const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
+  const [isSupported, setIsSupported] = useState(false);
+  const [testResults, setTestResults] = useState<string[]>([]);
+
+  useEffect(() => {
+    setPermissionStatus(notificationService.getPermissionStatus());
+    setIsSupported(notificationService.isSupported());
+  }, []);
+
+  const addTestResult = (result: string) => {
+    setTestResults(prev => [...prev, `${new Date().toLocaleTimeString()}: ${result}`]);
+  };
+
+  const testBasicToast = () => {
+    try {
+      toast('Basic Toast Test', {
+        description: 'This is a test toast notification',
+        duration: 3000,
+      });
+      addTestResult('✅ Basic toast test - SUCCESS');
+    } catch (error) {
+      addTestResult(`❌ Basic toast test - FAILED: ${error}`);
+    }
+  };
+
+  const testNotificationService = async () => {
+    try {
+      await notificationService.showSystemNotification(
+        'Notification Service Test',
+        'This is a test notification from the notification service'
+      );
+      addTestResult('✅ Notification service test - SUCCESS');
+    } catch (error) {
+      addTestResult(`❌ Notification service test - FAILED: ${error}`);
+    }
+  };
+
   const testMessageNotification = async () => {
+    try {
     await notificationService.showMessageNotification(
-      'John Doe',
-      'Hey! How are you doing? This is a test message notification.',
-      'test-chat-id',
-      'https://via.placeholder.com/40'
-    );
-    toast('Message notification sent!');
+        'Test User',
+        'This is a test message notification',
+        'test-chat-id'
+      );
+      addTestResult('✅ Message notification test - SUCCESS');
+    } catch (error) {
+      addTestResult(`❌ Message notification test - FAILED: ${error}`);
+    }
   };
 
   const testCallNotification = async () => {
+    try {
     await notificationService.showCallNotification(
-      'Jane Smith',
-      true, // isIncoming
-      'test-chat-id',
-      'https://via.placeholder.com/40'
-    );
-    toast('Call notification sent!');
+        'Test Caller',
+        true,
+        'test-chat-id'
+      );
+      addTestResult('✅ Call notification test - SUCCESS');
+    } catch (error) {
+      addTestResult(`❌ Call notification test - FAILED: ${error}`);
+    }
   };
 
-  const testFriendRequestNotification = async () => {
-    await notificationService.showFriendRequestNotification(
-      'Alice Johnson',
-      'https://via.placeholder.com/40'
-    );
-    toast('Friend request notification sent!');
+  const requestPermission = async () => {
+    try {
+      const granted = await notificationService.requestPermission();
+      setPermissionStatus(notificationService.getPermissionStatus());
+      addTestResult(`Permission request - ${granted ? 'GRANTED' : 'DENIED'}`);
+    } catch (error) {
+      addTestResult(`❌ Permission request - FAILED: ${error}`);
+    }
   };
 
-  const testSystemNotification = async () => {
-    await notificationService.showSystemNotification(
-      'System Update',
-      'Your app has been updated to the latest version with new features!'
-    );
-    toast('System notification sent!');
+  const checkPreferences = () => {
+    const prefs = notificationService.getPreferences();
+    addTestResult(`Current preferences: ${JSON.stringify(prefs, null, 2)}`);
   };
 
-  const testAllNotifications = async () => {
-    // Test all notification types with a delay
+  const runAllTests = async () => {
+    setTestResults([]);
+    addTestResult('🧪 Starting comprehensive notification tests...');
+    
+    // Basic info
+    addTestResult(`Browser support: ${isSupported ? 'YES' : 'NO'}`);
+    addTestResult(`Permission status: ${permissionStatus}`);
+    
+    // Test basic toast
+    testBasicToast();
+    
+    // Wait a bit then test service
+    setTimeout(async () => {
+      await testNotificationService();
+      setTimeout(async () => {
     await testMessageNotification();
-    setTimeout(() => testCallNotification(), 1000);
-    setTimeout(() => testFriendRequestNotification(), 2000);
-    setTimeout(() => testSystemNotification(), 3000);
+        setTimeout(async () => {
+          await testCallNotification();
+          addTestResult('🏁 All tests completed');
+        }, 1000);
+      }, 1000);
+    }, 1000);
+  };
+
+  const getStatusIcon = () => {
+    if (!isSupported) return <XCircle className="h-5 w-5 text-red-500" />;
+    if (permissionStatus === 'granted') return <CheckCircle className="h-5 w-5 text-green-500" />;
+    if (permissionStatus === 'denied') return <XCircle className="h-5 w-5 text-red-500" />;
+    return <AlertCircle className="h-5 w-5 text-yellow-500" />;
+  };
+
+  const getStatusColor = () => {
+    if (!isSupported || permissionStatus === 'denied') return 'destructive';
+    if (permissionStatus === 'granted') return 'default';
+    return 'secondary';
   };
 
   return (
-    <div className="space-y-6 w-full max-w-2xl mx-auto p-6">
-      <Card>
+    <Card className="w-full max-w-2xl mx-auto">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bell className="h-5 w-5" />
-            Notification Testing
+          Notification System Test
           </CardTitle>
           <CardDescription>
-            Test different types of notifications to verify your settings are working correctly.
+          Test and debug your notification system
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <Button
-              onClick={testMessageNotification}
-              className="flex items-center gap-2"
-              variant="outline"
-            >
-              <MessageCircle className="h-4 w-4" />
-              Test Message
-            </Button>
-            
-            <Button
-              onClick={testCallNotification}
-              className="flex items-center gap-2"
-              variant="outline"
-            >
-              <Phone className="h-4 w-4" />
-              Test Call
-            </Button>
-            
-            <Button
-              onClick={testFriendRequestNotification}
-              className="flex items-center gap-2"
-              variant="outline"
-            >
-              <Users className="h-4 w-4" />
-              Test Friend Request
-            </Button>
-            
-            <Button
-              onClick={testSystemNotification}
-              className="flex items-center gap-2"
-              variant="outline"
-            >
-              <Bell className="h-4 w-4" />
-              Test System
-            </Button>
+        {/* Status Section */}
+        <div className="flex items-center justify-between p-4 border rounded-lg">
+          <div className="flex items-center gap-2">
+            {getStatusIcon()}
+            <span className="font-medium">Notification Status</span>
           </div>
-          
-          <Button
-            onClick={testAllNotifications}
-            className="w-full bg-yuhu-primary hover:bg-yuhu-dark"
-          >
-            Test All Notifications (Sequential)
-          </Button>
-        </CardContent>
-      </Card>
+          <Badge variant={getStatusColor()}>
+            {!isSupported ? 'Not Supported' : permissionStatus}
+          </Badge>
+        </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Testing Instructions</CardTitle>
-        </CardHeader>
-        <CardContent className="space-y-3 text-sm">
-          <div>
-            <h4 className="font-medium mb-2">1. Browser Notifications</h4>
-            <p className="text-muted-foreground">
-              Make sure you've granted notification permissions to your browser. 
-              You should see browser notifications appear outside the app.
-            </p>
+        {/* Alerts */}
+        {!isSupported && (
+          <Alert variant="destructive">
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Your browser does not support notifications. Try using a modern browser like Chrome, Firefox, or Safari.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {permissionStatus === 'denied' && (
+          <Alert variant="destructive">
+            <XCircle className="h-4 w-4" />
+            <AlertDescription>
+              Notification permission has been denied. Please enable notifications in your browser settings and refresh the page.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {permissionStatus === 'default' && (
+          <Alert>
+            <AlertCircle className="h-4 w-4" />
+            <AlertDescription>
+              Notification permission has not been requested yet. Click "Request Permission" below.
+            </AlertDescription>
+          </Alert>
+        )}
+
+        {/* Test Buttons */}
+        <div className="grid grid-cols-2 gap-3">
+          <Button onClick={testBasicToast} variant="outline">
+            Test Basic Toast
+          </Button>
+          <Button onClick={testNotificationService} variant="outline">
+            Test Notification Service
+          </Button>
+          <Button onClick={testMessageNotification} variant="outline">
+            Test Message Notification
+          </Button>
+          <Button onClick={testCallNotification} variant="outline">
+            Test Call Notification
+          </Button>
+          <Button onClick={requestPermission} variant="default">
+            Request Permission
+          </Button>
+          <Button onClick={checkPreferences} variant="outline">
+            Check Preferences
+          </Button>
           </div>
           
-          <div>
-            <h4 className="font-medium mb-2">2. In-App Notifications</h4>
-            <p className="text-muted-foreground">
-              Toast notifications should appear in the top-right corner of the app.
-            </p>
+        <Button onClick={runAllTests} className="w-full" variant="default">
+          Run All Tests
+        </Button>
+
+        {/* Test Results */}
+        {testResults.length > 0 && (
+          <div className="mt-6">
+            <h3 className="font-semibold mb-2">Test Results:</h3>
+            <div className="bg-muted p-3 rounded-lg max-h-60 overflow-y-auto">
+              <pre className="text-sm whitespace-pre-wrap">
+                {testResults.join('\n')}
+              </pre>
           </div>
-          
-          <div>
-            <h4 className="font-medium mb-2">3. Sound Notifications</h4>
-            <p className="text-muted-foreground">
-              You should hear notification sounds if sound notifications are enabled.
-            </p>
           </div>
-          
-          <div>
-            <h4 className="font-medium mb-2">4. Notification Center</h4>
-            <p className="text-muted-foreground">
-              Click the bell icon in the header to see the notification center with all recent notifications.
-            </p>
-          </div>
+        )}
         </CardContent>
       </Card>
-    </div>
   );
 };
 

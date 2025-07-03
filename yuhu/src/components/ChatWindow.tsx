@@ -159,8 +159,18 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
 
   // Real-time subscription for new messages (all chats)
   useEffect(() => {
-    // Request notification permission on mount
-    notificationService.requestPermission();
+    // Request notification permission on mount and log status
+    const initializeNotifications = async () => {
+      try {
+        const granted = await notificationService.requestPermission();
+        console.log('Notification permission:', granted ? 'granted' : 'denied');
+        console.log('Notification preferences:', notificationService.getPreferences());
+      } catch (error) {
+        console.error('Failed to request notification permission:', error);
+      }
+    };
+    
+    initializeNotifications();
 
     const channel = supabase
       .channel('realtime:messages')
@@ -223,9 +233,48 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     }
   };
 
-  // Helper: get friend's user id
-  const friendId = chatDetails?.friendId;
-  console.log('friendId', friendId, 'userId', user?.id);
+  // Helper: get friend's user id with fallback
+  const [manualFriendId, setManualFriendId] = useState<string | null>(null);
+  const friendId = chatDetails?.friendId || manualFriendId;
+  
+  console.log('🔍 Friend ID Analysis:', {
+    friendIdFromDetails: chatDetails?.friendId,
+    manualFriendId,
+    finalFriendId: friendId,
+    userId: user?.id,
+    chatDetails: chatDetails,
+    chatType: chatDetails?.type,
+    members: chatDetails?.members
+  });
+
+  // Fallback: try to find friend ID manually if not available
+  useEffect(() => {
+    if (!chatDetails?.friendId && chatDetails?.type === 'direct' && activeChatId && user?.id) {
+      console.log('🔧 Friend ID missing, trying to find manually...');
+      
+      const findFriendId = async () => {
+        try {
+          const { data: participants, error } = await supabase
+            .from('chat_participants')
+            .select('profile_id')
+            .eq('chat_id', activeChatId)
+            .neq('profile_id', user.id);
+          
+          if (!error && participants && participants.length > 0) {
+            const foundFriendId = participants[0].profile_id;
+            console.log('🔧 Found friend ID manually:', foundFriendId);
+            setManualFriendId(foundFriendId);
+          } else {
+            console.error('🔧 Could not find friend ID manually:', error);
+          }
+        } catch (error) {
+          console.error('🔧 Error finding friend ID manually:', error);
+        }
+      };
+      
+      findFriendId();
+    }
+  }, [chatDetails, activeChatId, user?.id]);
 
   // Call UI state
   const [isMuted, setIsMuted] = useState(false);
@@ -236,6 +285,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const [iceConnectionStatus, setIceConnectionStatus] = useState<string>('disconnected');
   const [remoteVideoAvailable, setRemoteVideoAvailable] = useState(false);
   const [showDebug, setShowDebug] = useState(false);
+  const [callType, setCallType] = useState<'voice' | 'video'>('video');
 
   // Update call duration timer
   useEffect(() => {
@@ -282,11 +332,27 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   }
 
   // Start call: set start time
-  const startCall = async () => {
+  const startCall = async (type: 'voice' | 'video' = 'video') => {
+    console.log(`=== STARTING ${type.toUpperCase()} CALL ===`);
+    console.log('Chat ID:', activeChatId);
+    console.log('User ID:', user.id);
+    console.log('Friend ID:', friendId);
+    console.log('Chat Details:', chatDetails);
+    
+    if (!friendId) {
+      setCallError('Cannot start call: Friend ID not found');
+      return;
+    }
+    
     setCallError(null);
+    setCallType(type);
     setIsCalling(true);
     setShowCallModal(true);
     setCallStartTime(Date.now());
+    
+    // Set camera state based on call type
+    setIsCameraOn(type === 'video');
+    
     await logCallEvent({
       user_id: user.id,
       peer_id: friendId,
@@ -295,7 +361,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       chat_id: activeChatId,
       duration: null
     });
-    await setupMediaAndConnection(true);
+    await setupMediaAndConnection(true, type);
   };
   // Answer call: set start time
   const answerCall = async () => {
@@ -303,6 +369,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setIsReceivingCall(false);
     setShowCallModal(true);
     setCallStartTime(Date.now());
+    
+    // Set camera state based on incoming call type
+    setIsCameraOn(callType === 'video');
+    
     await logCallEvent({
       user_id: user.id,
       peer_id: friendId,
@@ -312,7 +382,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       duration: null
     });
     toast('Call accepted');
-    await setupMediaAndConnection(false);
+    await setupMediaAndConnection(false, callType);
   };
   // End call: reset start time and notify other party
   const endCall = () => {
@@ -335,6 +405,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setIceConnectionStatus('disconnected');
     setRemoteVideoAvailable(false);
     setShowDebug(false);
+    setCallType('video'); // Reset call type
     peerConnectionRef.current?.close();
     peerConnectionRef.current = null;
     localStreamRef.current?.getTracks().forEach(track => track.stop());
@@ -371,7 +442,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   };
 
   // Setup media and peer connection
-  const setupMediaAndConnection = async (isCaller: boolean) => {
+  const setupMediaAndConnection = async (isCaller: boolean, type: 'voice' | 'video' = 'video') => {
     try {
       // Check if WebRTC is supported
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -383,11 +454,11 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         throw new Error('RTCPeerConnection is not supported in this browser');
       }
 
-      console.log('Starting video call setup...');
+      console.log(`Starting ${type} call setup...`);
       
-      // Get local media
+      // Get local media based on call type
       const localStream = await navigator.mediaDevices.getUserMedia({ 
-        video: true, 
+        video: type === 'video', 
         audio: true 
       });
       
@@ -413,39 +484,115 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         pc.addTrack(track, localStream);
       });
 
-      // Handle remote stream
+      // Handle remote stream with enhanced debugging
       pc.ontrack = (event) => {
-        console.log('Received remote track:', event);
+        console.log('📺 Received remote track event:', {
+          track: event.track,
+          kind: event.track.kind,
+          readyState: event.track.readyState,
+          enabled: event.track.enabled,
+          muted: event.track.muted,
+          streams: event.streams?.length || 0
+        });
+        
         if (event.streams && event.streams[0]) {
-          remoteStreamRef.current = event.streams[0];
           const remoteStream = event.streams[0];
+          remoteStreamRef.current = remoteStream;
           
-          // Log track types
+          // Enhanced track logging
           const videoTracks = remoteStream.getVideoTracks();
           const audioTracks = remoteStream.getAudioTracks();
-          console.log('Remote stream video tracks:', videoTracks.length);
-          console.log('Remote stream audio tracks:', audioTracks.length);
           
+          console.log('📺 Remote stream analysis:', {
+            streamId: remoteStream.id,
+            videoTracks: videoTracks.length,
+            audioTracks: audioTracks.length,
+            videoTrackState: videoTracks[0]?.readyState,
+            audioTrackState: audioTracks[0]?.readyState,
+            active: remoteStream.active
+          });
+          
+          // Set video availability
           if (videoTracks.length === 0) {
-            console.warn('No remote video tracks found!');
+            console.warn('⚠️ No remote video tracks found!');
             setRemoteVideoAvailable(false);
           } else {
+            console.log('✅ Remote video tracks found, setting available');
             setRemoteVideoAvailable(true);
           }
-          if (audioTracks.length === 0) {
-            console.warn('No remote audio tracks found!');
+          
+          // Enhanced video element handling
+          if (remoteVideoRef.current) {
+            console.log('📺 Setting remote video srcObject');
+            remoteVideoRef.current.srcObject = remoteStream;
+            
+            // Force video to play with better error handling
+            const playPromise = remoteVideoRef.current.play();
+            
+            if (playPromise !== undefined) {
+              playPromise
+                .then(() => {
+                  console.log('✅ Remote video is playing successfully');
+                  console.log('📺 Video dimensions:', {
+                    videoWidth: remoteVideoRef.current?.videoWidth,
+                    videoHeight: remoteVideoRef.current?.videoHeight
+                  });
+                })
+                .catch(err => {
+                  console.error('❌ Error playing remote video:', err);
+                  
+                  // Try to enable autoplay
+                  if (remoteVideoRef.current) {
+                    remoteVideoRef.current.muted = true;
+                    remoteVideoRef.current.play().catch(err2 => {
+                      console.error('❌ Error playing muted remote video:', err2);
+                    });
+                  }
+                });
+            }
+            
+            // Add event listeners for debugging
+            remoteVideoRef.current.onloadedmetadata = () => {
+              console.log('📺 Remote video metadata loaded');
+            };
+            
+            remoteVideoRef.current.oncanplay = () => {
+              console.log('📺 Remote video can play');
+            };
+            
+            remoteVideoRef.current.onerror = (error) => {
+              console.error('📺 Remote video error:', error);
+            };
+            
+          } else {
+            console.error('❌ remoteVideoRef.current is null!');
           }
           
-          if (remoteVideoRef.current) {
-            remoteVideoRef.current.srcObject = remoteStream;
-            remoteVideoRef.current.play().then(() => {
-              console.log('Remote video is playing');
-            }).catch(err => console.error('Error playing remote video:', err));
-          } else {
-            console.warn('remoteVideoRef.current is null');
-          }
+          // Monitor track changes
+          remoteStream.getTracks().forEach((track, index) => {
+            console.log(`📺 Track ${index} (${track.kind}):`, {
+              id: track.id,
+              kind: track.kind,
+              enabled: track.enabled,
+              muted: track.muted,
+              readyState: track.readyState
+            });
+            
+            track.onended = () => {
+              console.log(`📺 Remote ${track.kind} track ended`);
+            };
+            
+            track.onmute = () => {
+              console.log(`🔇 Remote ${track.kind} track muted`);
+            };
+            
+            track.onunmute = () => {
+              console.log(`🔊 Remote ${track.kind} track unmuted`);
+            };
+          });
+          
         } else {
-          console.warn('No remote stream found in ontrack event');
+          console.error('❌ No remote stream found in ontrack event');
           setRemoteVideoAvailable(false);
         }
       };
@@ -454,12 +601,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       pc.onicecandidate = (event) => {
         if (event.candidate && friendId) {
           console.log('Sending ICE candidate to', friendId);
+          console.log('ICE Candidate:', event.candidate);
           sendSignal(activeChatId!, {
             type: 'ice',
             from: user.id,
             to: friendId,
             data: event.candidate,
+          }).catch(err => {
+            console.error('Failed to send ICE candidate:', err);
           });
+        } else if (!event.candidate) {
+          console.log('ICE gathering completed');
         }
       };
 
@@ -498,38 +650,72 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         signalingUnsubRef.current = subscribeToSignaling(activeChatId!, async (msg: SignalMessage) => {
           console.log('Received signal', msg.type, 'from', msg.from, 'to', msg.to);
           if (msg.to !== user.id) return;
-          if (!peerConnectionRef.current && msg.type !== 'hangup') return;
+          
+          const pc = peerConnectionRef.current;
+          if (!pc && msg.type !== 'hangup') {
+            console.warn('No peer connection available for signal:', msg.type);
+            return;
+          }
           
           try {
             if (msg.type === 'offer' && !isCaller) {
-              console.log('Handling incoming offer');
-              await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
-              const answer = await peerConnectionRef.current.createAnswer();
-              await peerConnectionRef.current.setLocalDescription(answer);
+              console.log('Handling incoming offer:', msg.data);
+              console.log('Current signaling state:', pc.signalingState);
+              
+              if (pc.signalingState !== 'stable') {
+                console.warn('Peer connection not in stable state:', pc.signalingState);
+              }
+              
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+              console.log('Remote description set successfully');
+              
+              const answer = await pc.createAnswer();
+              console.log('Answer created:', answer);
+              
+              await pc.setLocalDescription(answer);
+              console.log('Local description set successfully');
+              
               sendSignal(activeChatId!, {
                 type: 'answer',
                 from: user.id,
                 to: friendId!,
                 data: answer,
               });
+              console.log('Answer sent successfully');
+              
             } else if (msg.type === 'answer' && isCaller) {
-              console.log('Handling incoming answer');
-              await peerConnectionRef.current.setRemoteDescription(new RTCSessionDescription(msg.data));
+              console.log('Handling incoming answer:', msg.data);
+              console.log('Current signaling state:', pc.signalingState);
+              
+              if (pc.signalingState !== 'have-local-offer') {
+                console.warn('Unexpected signaling state for answer:', pc.signalingState);
+              }
+              
+              await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+              console.log('Remote description set from answer');
+              
             } else if (msg.type === 'ice') {
-              console.log('Adding ICE candidate');
-              await peerConnectionRef.current.addIceCandidate(new RTCIceCandidate(msg.data));
+              console.log('Received ICE candidate:', msg.data);
+              
+              if (pc.remoteDescription) {
+                await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+                console.log('ICE candidate added successfully');
+              } else {
+                console.warn('Received ICE candidate but no remote description set');
+              }
+              
             } else if (msg.type === 'hangup') {
               console.log('Received hangup signal');
               endCall();
             }
           } catch (error) {
             console.error('Error handling signal:', msg.type, error);
-            if (msg.type === 'offer') {
-              setCallError('Failed to handle incoming call. Please try again.');
-            } else if (msg.type === 'answer') {
-              setCallError('Failed to establish call. Please try again.');
+            setCallError(`Signal handling error (${msg.type}): ${error.message}`);
+            
+            // Don't end call immediately for ICE candidate errors
+            if (msg.type !== 'ice') {
+              setTimeout(() => endCall(), 2000);
             }
-            endCall();
           }
         });
       }
@@ -538,17 +724,29 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       if (isCaller && friendId) {
         try {
           console.log('Creating offer as caller');
-          const offer = await pc.createOffer();
+          console.log('Current signaling state before offer:', pc.signalingState);
+          
+          const offer = await pc.createOffer({
+            offerToReceiveAudio: true,
+            offerToReceiveVideo: type === 'video'
+          });
+          console.log('Offer created:', offer);
+          
           await pc.setLocalDescription(offer);
-          sendSignal(activeChatId!, {
+          console.log('Local description set with offer');
+          console.log('Signaling state after setting local description:', pc.signalingState);
+          
+          const result = await sendSignal(activeChatId!, {
             type: 'offer',
             from: user.id,
             to: friendId,
-            data: offer,
+            data: { ...offer, callType: type },
           });
+          console.log('Offer sent successfully:', result);
+          
         } catch (error) {
-          console.error('Error creating offer:', error);
-          setCallError('Failed to start call. Please try again.');
+          console.error('Error creating/sending offer:', error);
+          setCallError(`Failed to start call: ${error.message}`);
           endCall();
         }
       }
@@ -562,12 +760,26 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   // Handle incoming signaling (offer)
   useEffect(() => {
     if (!activeChatId || !user?.id) return;
+    
+    console.log('Setting up global signaling listener for chat:', activeChatId, 'user:', user.id);
+    
     // Listen for incoming offers
     const unsub = subscribeToSignaling(activeChatId, (msg: SignalMessage) => {
-      console.log('Incoming signal (effect)', msg, 'userId', user.id);
-      if (msg.to !== user.id) return;
+      console.log('📞 Incoming signal (global effect):', msg.type, 'from:', msg.from, 'to:', msg.to, 'userId:', user.id);
+      console.log('📞 Message details:', msg);
+      
+      if (msg.to !== user.id) {
+        console.log('📞 Signal not for me, ignoring');
+        return;
+      }
+      
       if (msg.type === 'offer') {
-        console.log('Incoming call offer received!');
+        console.log('📞 Incoming call offer received! Setting receive call state');
+        
+        // Extract call type from offer data
+        const incomingCallType = msg.data?.callType || 'video';
+        console.log('📞 Incoming call type:', incomingCallType);
+        setCallType(incomingCallType);
         setIsReceivingCall(true);
         
         // Use notification service for call notifications
@@ -579,7 +791,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         );
       }
     });
+    
     return () => {
+      console.log('📞 Cleaning up global signaling listener');
       unsub();
     };
   }, [activeChatId, user?.id, chatDetails]);
@@ -662,11 +876,16 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           </div>
         </div>
         <div className="flex items-center space-x-1">
-          {/* Add Call button for direct chats */}
+                      {/* Add Call buttons for direct chats */}
           {chatDetails.type === 'direct' && (
-            <Button variant="ghost" size="icon" className="text-yuhu-primary" onClick={startCall}>
-              <Video className="h-5 w-5" />
-            </Button>
+            <>
+              <Button variant="ghost" size="icon" className="text-yuhu-primary" onClick={() => startCall('voice')} title="Voice Call">
+                <Phone className="h-5 w-5" />
+              </Button>
+              <Button variant="ghost" size="icon" className="text-yuhu-primary" onClick={() => startCall('video')} title="Video Call">
+                <Video className="h-5 w-5" />
+              </Button>
+            </>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
@@ -751,7 +970,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         <DialogContent className="max-w-lg w-full rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 shadow-2xl p-0 overflow-hidden flex flex-col items-center">
           <div className="w-full flex flex-col items-center p-6 pb-2">
             <h2 className="text-xl font-bold mb-2 text-yuhu-primary tracking-tight">
-              {isReceivingCall ? 'Incoming Call' : 'Call in Progress'}
+              {isReceivingCall ? `Incoming ${callType === 'voice' ? 'Voice' : 'Video'} Call` : `${callType === 'voice' ? 'Voice' : 'Video'} Call in Progress`}
             </h2>
             <div className="text-xs text-muted-foreground mb-2">
               {isReceivingCall ? 'Someone is calling you...' : `Duration: ${callDuration}`}
@@ -768,45 +987,106 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                 </span>
               </div>
             )}
-            <div className="flex flex-col sm:flex-row gap-4 w-full justify-center items-center mt-2">
-              {/* Local Video/User */}
-              <div className="flex flex-col items-center">
-                <div className="relative">
-                  <video
-                    ref={localVideoRef}
-                    autoPlay
-                    muted
-                    playsInline
-                    className={`rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary ${!isCameraOn ? 'hidden' : ''} max-w-full`}
-                  />
-                  {!isCameraOn && (
-                    <div className="w-64 h-64 rounded-2xl bg-zinc-700 flex items-center justify-center text-5xl font-bold text-yuhu-primary shadow-lg max-w-full">
-                      {profile?.username?.[0]?.toUpperCase() || 'U'}
-                    </div>
-                  )}
-                  <span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">You</span>
+            {callType === 'voice' ? (
+              // Voice Call Layout - Side by side profile pictures
+              <div className="flex gap-8 w-full justify-center items-center mt-4">
+                {/* Local User Profile */}
+                <div className="flex flex-col items-center">
+                  <div className="relative">
+                    <Avatar className="w-32 h-32 border-4 border-yuhu-primary shadow-2xl">
+                      <AvatarImage src={profile?.avatar} alt={profile?.fullName || profile?.username} />
+                      <AvatarFallback className="text-3xl font-bold text-yuhu-primary bg-zinc-700">
+                        {profile?.username?.[0]?.toUpperCase() || 'U'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">You</span>
+                    {isMuted && (
+                      <span className="absolute top-1 right-1 bg-red-600 text-white text-xs p-1 rounded-full">
+                        🔇
+                      </span>
+                    )}
+                  </div>
+                  <div className="mt-2 text-sm text-center text-muted-foreground font-medium">
+                    {profile?.fullName || profile?.username}
+                  </div>
                 </div>
-                <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{profile?.fullName || profile?.username}</div>
-              </div>
-              {/* Remote Video/User */}
-              <div className="flex flex-col items-center">
-                <div className="relative">
-                  <video
-                    ref={remoteVideoRef}
-                    autoPlay
-                    playsInline
-                    className={`rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary max-w-full ${!remoteVideoAvailable ? 'hidden' : ''}`}
-                  />
-                  {!remoteVideoAvailable && (
-                    <div className="w-64 h-64 rounded-2xl bg-zinc-700 flex items-center justify-center text-5xl font-bold text-yuhu-primary shadow-lg max-w-full">
-                      {chatDetails?.name?.[0]?.toUpperCase() || 'F'}
-                    </div>
-                  )}
-                  <span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">Friend</span>
+                
+                {/* Voice Wave Animation */}
+                <div className="flex flex-col items-center">
+                  <div className="flex items-center gap-1 h-16">
+                    {[...Array(5)].map((_, i) => (
+                      <div
+                        key={i}
+                        className={`w-1 bg-yuhu-primary rounded-full animate-pulse`}
+                        style={{
+                          height: `${Math.random() * 40 + 10}px`,
+                          animationDelay: `${i * 0.1}s`,
+                          animationDuration: '0.8s'
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div className="text-xs text-yuhu-primary font-medium">Voice Call</div>
                 </div>
-                <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{chatDetails?.name}</div>
+
+                {/* Remote User Profile */}
+                <div className="flex flex-col items-center">
+                  <div className="relative">
+                    <Avatar className="w-32 h-32 border-4 border-yuhu-primary shadow-2xl">
+                      <AvatarImage src={chatDetails?.avatar} alt={chatDetails?.name} />
+                      <AvatarFallback className="text-3xl font-bold text-yuhu-primary bg-zinc-700">
+                        {chatDetails?.name?.[0]?.toUpperCase() || 'F'}
+                      </AvatarFallback>
+                    </Avatar>
+                    <span className="absolute bottom-1 left-1 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">Friend</span>
+                  </div>
+                  <div className="mt-2 text-sm text-center text-muted-foreground font-medium">
+                    {chatDetails?.name}
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              // Video Call Layout - Original layout
+              <div className="flex flex-col sm:flex-row gap-4 w-full justify-center items-center mt-2">
+                {/* Local Video/User */}
+                <div className="flex flex-col items-center">
+                  <div className="relative">
+                    <video
+                      ref={localVideoRef}
+                      autoPlay
+                      muted
+                      playsInline
+                      className={`rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary ${!isCameraOn ? 'hidden' : ''} max-w-full`}
+                    />
+                    {!isCameraOn && (
+                      <div className="w-64 h-64 rounded-2xl bg-zinc-700 flex items-center justify-center text-5xl font-bold text-yuhu-primary shadow-lg max-w-full">
+                        {profile?.username?.[0]?.toUpperCase() || 'U'}
+                      </div>
+                    )}
+                    <span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">You</span>
+                  </div>
+                  <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{profile?.fullName || profile?.username}</div>
+                </div>
+                {/* Remote Video/User */}
+                <div className="flex flex-col items-center">
+                  <div className="relative">
+                    <video
+                      ref={remoteVideoRef}
+                      autoPlay
+                      playsInline
+                      className={`rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary max-w-full ${!remoteVideoAvailable ? 'hidden' : ''}`}
+                    />
+                    {!remoteVideoAvailable && (
+                      <div className="w-64 h-64 rounded-2xl bg-zinc-700 flex items-center justify-center text-5xl font-bold text-yuhu-primary shadow-lg max-w-full">
+                        {chatDetails?.name?.[0]?.toUpperCase() || 'F'}
+                      </div>
+                    )}
+                    <span className="absolute bottom-2 left-2 bg-black/60 text-white text-xs px-2 py-0.5 rounded-full">Friend</span>
+                  </div>
+                  <div className="mt-1 text-xs text-center text-muted-foreground truncate max-w-[12rem]">{chatDetails?.name}</div>
+                </div>
+              </div>
+            )}
             {/* Animated Connecting Indicator */}
             {!callStartTime && !isReceivingCall && (
               <div className="mt-4 flex items-center gap-2 animate-pulse text-yuhu-primary">
@@ -840,21 +1120,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                   )}
                 </svg>
               </Button>
-              <Button
-                variant={isCameraOn ? 'ghost' : 'secondary'}
-                size="icon"
-                className={`rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow ${!isCameraOn ? 'bg-yellow-600' : ''}`}
-                onClick={toggleCamera}
-                title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
-              >
-                <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
-                  {isCameraOn ? (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M4 6v12a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2z" />
-                  ) : (
-                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M4 6v12a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2z" />
-                  )}
-                </svg>
-              </Button>
+              {callType === 'video' && (
+                <Button
+                  variant={isCameraOn ? 'ghost' : 'secondary'}
+                  size="icon"
+                  className={`rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow ${!isCameraOn ? 'bg-yellow-600' : ''}`}
+                  onClick={toggleCamera}
+                  title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" className="w-6 h-6">
+                    {isCameraOn ? (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M4 6v12a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2z" />
+                    ) : (
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M4 6v12a2 2 0 002 2h8a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2z" />
+                    )}
+                  </svg>
+                </Button>
+              )}
               <Button
                 variant="ghost"
                 size="icon"
@@ -879,13 +1161,40 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               <div className="mt-4 p-3 bg-zinc-800/50 rounded-lg text-xs text-left w-full max-w-md">
                 <div className="font-semibold mb-2 text-yuhu-primary">Debug Information:</div>
                 <div className="space-y-1">
-                  <div>WebRTC State: <span className="text-green-400">{connectionStatus}</span></div>
-                  <div>ICE State: <span className="text-green-400">{iceConnectionStatus}</span></div>
+                  <div>WebRTC State: <span className={connectionStatus === 'connected' ? 'text-green-400' : 'text-red-400'}>{connectionStatus}</span></div>
+                  <div>ICE State: <span className={iceConnectionStatus === 'connected' ? 'text-green-400' : 'text-red-400'}>{iceConnectionStatus}</span></div>
                   <div>Remote Video: <span className={remoteVideoAvailable ? 'text-green-400' : 'text-red-400'}>{remoteVideoAvailable ? 'Available' : 'Not Available'}</span></div>
                   <div>Local Stream: <span className={localStreamRef.current ? 'text-green-400' : 'text-red-400'}>{localStreamRef.current ? 'Active' : 'Not Active'}</span></div>
                   <div>Peer Connection: <span className={peerConnectionRef.current ? 'text-green-400' : 'text-red-400'}>{peerConnectionRef.current ? 'Active' : 'Not Active'}</span></div>
-                  <div>Chat ID: <span className="text-blue-400">{activeChatId}</span></div>
-                  <div>Friend ID: <span className="text-blue-400">{friendId}</span></div>
+                  <div>Chat ID: <span className="text-blue-400 break-all">{activeChatId}</span></div>
+                  <div>Friend ID: <span className="text-blue-400">{friendId || 'NOT FOUND'}</span></div>
+                  <div>User ID: <span className="text-blue-400">{user?.id}</span></div>
+                  <div>Signaling: <span className={signalingUnsubRef.current ? 'text-green-400' : 'text-red-400'}>{signalingUnsubRef.current ? 'Active' : 'Not Active'}</span></div>
+                </div>
+                <div className="mt-2 pt-2 border-t border-zinc-600">
+                  <div className="text-yellow-400 font-semibold">Quick Actions:</div>
+                  <button 
+                    className="text-blue-400 hover:text-blue-300 mr-3"
+                    onClick={() => console.log('Current state:', { connectionStatus, iceConnectionStatus, friendId, activeChatId, user: user?.id })}
+                  >
+                    Log State
+                  </button>
+                  <button 
+                    className="text-green-400 hover:text-green-300"
+                    onClick={() => {
+                      if (friendId) {
+                        sendSignal(activeChatId!, {
+                          type: 'ice',
+                          from: user.id,
+                          to: friendId,
+                          data: { ping: Date.now() }
+                        });
+                        console.log('Ping sent to', friendId);
+                      }
+                    }}
+                  >
+                    Ping Friend
+                  </button>
                 </div>
               </div>
             )}

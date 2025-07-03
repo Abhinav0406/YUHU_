@@ -267,8 +267,6 @@ const Message: React.FC<MessageProps> = ({
   };
 
   const renderMessageContent = () => {
-    console.log('Voice message debug:', { type, text });
-    
     // Handle voice messages (both direct and JSON-encoded)
     if (isVoiceMessage) {
       return (
