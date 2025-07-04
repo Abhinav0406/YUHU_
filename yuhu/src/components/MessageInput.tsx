@@ -89,7 +89,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
     const currentMessage = message.trim();
     setLastSentTime(Date.now());
     if (replyTo) {
-      onSendMessage({ type: 'text', content: currentMessage, replyTo });
+      onSendMessage({ type: 'text', content: currentMessage });
     } else {
       onSendMessage(currentMessage);
     }
@@ -120,10 +120,13 @@ const MessageInput: React.FC<MessageInputProps> = ({
     // Validate file type
     const isImage = file.type.startsWith('image/');
     const isPdf = file.type === 'application/pdf';
-    if (!isImage && !isPdf) {
+    const isAudio = file.type.startsWith('audio/');
+    const isDat = file.name.endsWith('.dat');
+    const isMp4 = file.type === 'video/mp4' || file.name.endsWith('.mp4');
+    if (!isImage && !isPdf && !isAudio && !isDat && !isMp4) {
       toast({
         title: "Invalid file type",
-        description: "Please select an image or PDF file",
+        description: "Please select an image, PDF, audio, .mp4, or .dat file",
         variant: "destructive"
       });
       return;
@@ -133,14 +136,15 @@ const MessageInput: React.FC<MessageInputProps> = ({
     try {
       const fileExt = file.name.split('.').pop();
       const fileName = `${Date.now()}.${fileExt}`;
-      const { data, error } = await supabase.storage.from('chat-files').upload(fileName, file);
-      
+      let bucket = 'chat-files';
+      let msgType = isImage ? 'image' : isPdf ? 'pdf' : isMp4 ? 'video' : 'audio';
+      if (isAudio || isDat || isMp4) bucket = 'audio-files';
+      const { data, error } = await supabase.storage.from(bucket).upload(fileName, file);
       if (error) {
         throw new Error(error.message);
       }
-
-      const { data: urlData } = supabase.storage.from('chat-files').getPublicUrl(fileName);
-      onSendMessage({ type: isImage ? 'image' : 'pdf', content: urlData.publicUrl });
+      const { data: urlData } = supabase.storage.from(bucket).getPublicUrl(fileName);
+      onSendMessage({ type: msgType, content: urlData.publicUrl });
     } catch (error) {
       toast({
         title: "Upload failed",
@@ -269,7 +273,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
         </Button>
         <input
           type="file"
-          accept="image/*,application/pdf"
+          accept="image/*,application/pdf,audio/*,.dat,video/mp4,.mp4"
           ref={fileInputRef}
           className="hidden"
           onChange={handleFileChange}

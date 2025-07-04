@@ -203,13 +203,13 @@ const Message: React.FC<MessageProps> = ({
   let isVoiceMessage = false;
   let audioUrl = '';
 
-  if (type === 'voice') {
+  if (type === 'voice' || type === 'audio') {
     isVoiceMessage = true;
     audioUrl = text;
   } else if (typeof text === 'string' && text.startsWith('{') && text.endsWith('}')) {
     try {
       parsed = JSON.parse(text);
-      if (parsed && parsed.type === 'voice' && parsed.content) {
+      if (parsed && (parsed.type === 'voice' || parsed.type === 'audio') && parsed.content) {
         isVoiceMessage = true;
         audioUrl = parsed.content;
       }
@@ -370,6 +370,37 @@ const Message: React.FC<MessageProps> = ({
             className="text-yuhu-primary underline break-all"
           >
             Open PDF
+          </a>
+        </div>
+      );
+    }
+    if (type === 'audio') {
+      return (
+        <div className="flex items-center gap-2 px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl border border-zinc-300 dark:border-zinc-700 max-w-xs md:max-w-md">
+          <audio controls src={text} className="w-full" />
+          <a
+            href={text}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-yuhu-primary underline break-all ml-2"
+          >
+            Download
+          </a>
+        </div>
+      );
+    }
+    // --- Video file message ---
+    if (type === 'video') {
+      return (
+        <div className="flex flex-col gap-2 px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl border border-zinc-300 dark:border-zinc-700 max-w-xs md:max-w-md">
+          <video controls src={text} className="w-full max-h-60 rounded-lg" />
+          <a
+            href={text}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-yuhu-primary underline break-all"
+          >
+            Download MP4
           </a>
         </div>
       );
