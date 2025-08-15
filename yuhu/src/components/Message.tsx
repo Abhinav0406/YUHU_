@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { MoreVertical, Trash2, Play, Pause, FileText, Download, X, ZoomIn, ZoomOut, ImageIcon, ChevronLeft, ChevronRight, Maximize, Minimize } from 'lucide-react';
+import { MoreVertical, Trash2, Play, Pause, FileText, Download, X, ZoomIn, ZoomOut, ImageIcon, ChevronLeft, ChevronRight, Maximize, Minimize, Check, CheckCheck, Clock, Smile, Heart, ThumbsUp, ThumbsDown } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,8 +12,63 @@ import {
 import { Button } from '@/components/ui/button';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { deleteMessage } from '@/services/chatService';
+import { toggleReaction } from '@/services/reactionService';
 import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 import { Dialog, DialogContent } from '@/components/ui/dialog';
+
+// WhatsApp-style Message Status Component
+const MessageStatus: React.FC<{ status: 'sent' | 'delivered' | 'read' }> = ({ status }) => {
+  const getStatusIcon = () => {
+    switch (status) {
+      case 'sent':
+        return <Check className="h-3 w-3 text-muted-foreground" />;
+      case 'delivered':
+        return <CheckCheck className="h-3 w-3 text-muted-foreground" />;
+      case 'read':
+        return <CheckCheck className="h-3 w-3 text-blue-500" />;
+      default:
+        return <Clock className="h-3 w-3 text-muted-foreground" />;
+    }
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      {getStatusIcon()}
+    </div>
+  );
+};
+
+// WhatsApp-style Message Reactions Component
+const MessageReactions: React.FC<{ 
+  reactions?: Array<{ emoji: string; count: number; users: string[] }>;
+  onReaction?: (emoji: string) => void;
+  currentUserId?: string;
+}> = ({ reactions = [], onReaction, currentUserId }) => {
+  if (reactions.length === 0) return null;
+
+  return (
+    <div className="flex items-center gap-1 mt-1">
+      {reactions.map((reaction, index) => {
+        const hasReacted = currentUserId && reaction.users.includes(currentUserId);
+        return (
+          <div
+            key={index}
+            className={`bg-muted/50 rounded-full px-2 py-1 text-xs flex items-center gap-1 cursor-pointer hover:bg-muted/70 transition-colors ${
+              hasReacted ? 'bg-yuhu-primary/20 border border-yuhu-primary/30' : ''
+            }`}
+            onClick={() => onReaction?.(reaction.emoji)}
+            title={`${reaction.count} reaction${reaction.count > 1 ? 's' : ''}`}
+          >
+            <span>{reaction.emoji}</span>
+            <span className={`text-xs ${hasReacted ? 'text-yuhu-primary font-medium' : 'text-muted-foreground'}`}>
+              {reaction.count}
+            </span>
+          </div>
+        );
+      })}
+    </div>
+  );
+};
 
 // Image Modal Component
 const ImageModal: React.FC<{
@@ -397,6 +452,7 @@ interface MessageProps {
   type?: string;
   replyTo?: string;
   replyToMessage?: { id: string; text: string; senderId: string };
+  reactions?: Array<{ emoji: string; count: number; users: string[] }>;
   onReply?: () => void;
 }
 
@@ -413,6 +469,7 @@ const Message: React.FC<MessageProps> = ({
   type = 'text',
   replyTo,
   replyToMessage,
+  reactions = [],
   onReply,
 }) => {
   const { user } = useAuth();
@@ -426,6 +483,8 @@ const Message: React.FC<MessageProps> = ({
   const [selectedImageUrl, setSelectedImageUrl] = useState('');
   const [selectedImageUrls, setSelectedImageUrls] = useState<string[] | undefined>();
   const [selectedImageIndex, setSelectedImageIndex] = useState(0);
+  const [showReactions, setShowReactions] = useState(false);
+  const [isHighlighted, setIsHighlighted] = useState(false);
 
   // Add state for dropdown open
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -476,8 +535,24 @@ const Message: React.FC<MessageProps> = ({
     },
   });
 
+  const reactionMutation = useMutation({
+    mutationFn: ({ emoji }: { emoji: string }) => toggleReaction(id, user!.id, emoji),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['messages', chatId] });
+    },
+    onError: (error) => {
+      console.error('Failed to toggle reaction:', error);
+      // You could add a toast notification here
+    },
+  });
+
   const handleDelete = () => {
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleReaction = (emoji: string) => {
+    if (!user) return;
+    reactionMutation.mutate({ emoji });
   };
 
   const togglePlay = () => {
@@ -715,7 +790,16 @@ const Message: React.FC<MessageProps> = ({
         </div>
       );
     }
-    return <p className="text-sm whitespace-pre-line break-words">{displayText}</p>;
+    return (
+      <div>
+        <p className="text-sm whitespace-pre-line break-words">{displayText}</p>
+        <MessageReactions 
+          reactions={reactions} 
+          onReaction={handleReaction}
+          currentUserId={user?.id}
+        />
+      </div>
+    );
   };
 
   // Render reply preview if replyTo exists
@@ -796,6 +880,18 @@ const Message: React.FC<MessageProps> = ({
                   <DropdownMenuItem onClick={onReply} className="cursor-pointer">
                     Reply
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {}} className="cursor-pointer">
+                    Forward
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {}} className="cursor-pointer">
+                    Copy
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {}} className="cursor-pointer">
+                    Star
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {}} className="cursor-pointer">
+                    Pin
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     className="text-red-600 cursor-pointer hover:bg-red-50"
                     onClick={handleDelete}
@@ -818,13 +914,74 @@ const Message: React.FC<MessageProps> = ({
                 >
                   {renderReplyPreview()}
                   {renderMessageContent()}
+                  {/* Quick reactions on hover */}
+                  <div className="absolute -top-8 right-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-background border rounded-lg shadow-lg p-1 flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('👍')}
+                      title="Thumbs up"
+                      disabled={reactionMutation.isPending}
+                    >
+                      👍
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('❤️')}
+                      title="Heart"
+                      disabled={reactionMutation.isPending}
+                    >
+                      ❤️
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('😂')}
+                      title="Laugh"
+                      disabled={reactionMutation.isPending}
+                    >
+                      😂
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('😮')}
+                      title="Wow"
+                      disabled={reactionMutation.isPending}
+                    >
+                      😮
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('😢')}
+                      title="Sad"
+                      disabled={reactionMutation.isPending}
+                    >
+                      😢
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('🔥')}
+                      title="Fire"
+                      disabled={reactionMutation.isPending}
+                    >
+                      🔥
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-1 text-[10px] px-2 justify-end text-muted-foreground mt-1">
                 <span className="message-time">{time}</span>
-                {status === 'read' && (
-                  <span className="text-yuhu-primary">• Read</span>
-                )}
+                <MessageStatus status={status} />
               </div>
             </div>
           </>
@@ -844,6 +1001,15 @@ const Message: React.FC<MessageProps> = ({
                 <DropdownMenuContent align="end" className="w-40">
                   <DropdownMenuItem onClick={onReply} className="cursor-pointer">
                     Reply
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {}} className="cursor-pointer">
+                    Forward
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {}} className="cursor-pointer">
+                    Copy
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => {}} className="cursor-pointer">
+                    Star
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
@@ -865,6 +1031,69 @@ const Message: React.FC<MessageProps> = ({
                 >
                   {renderReplyPreview()}
                   {renderMessageContent()}
+                  {/* Quick reactions on hover */}
+                  <div className="absolute -top-8 left-0 opacity-0 group-hover:opacity-100 transition-opacity duration-200 bg-background border rounded-lg shadow-lg p-1 flex gap-1">
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('👍')}
+                      title="Thumbs up"
+                      disabled={reactionMutation.isPending}
+                    >
+                      👍
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('❤️')}
+                      title="Heart"
+                      disabled={reactionMutation.isPending}
+                    >
+                      ❤️
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('😂')}
+                      title="Laugh"
+                      disabled={reactionMutation.isPending}
+                    >
+                      😂
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('😮')}
+                      title="Wow"
+                      disabled={reactionMutation.isPending}
+                    >
+                      😮
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      onClick={() => handleReaction('😢')}
+                      title="Sad"
+                      disabled={reactionMutation.isPending}
+                    >
+                      😢
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-6 w-6 hover:bg-muted"
+                      title="Fire"
+                      onClick={() => handleReaction('🔥')}
+                      disabled={reactionMutation.isPending}
+                    >
+                      🔥
+                    </Button>
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-1 text-[10px] px-2 justify-start text-muted-foreground mt-1">

@@ -1,0 +1,27 @@
+Welcome to YUHU!
+
+Your Campus, Connected
+
+Thank you for joining our campus community! We're excited to have you on board.
+
+To complete your registration and start connecting with fellow students, please confirm your email address by clicking the link below:
+
+{{ .ConfirmationURL }}
+
+Once confirmed, you'll have access to all the amazing features YUHU has to offer:
+
+• Real-time chat with classmates and friends
+• Connect with students across your campus  
+• Discover study groups and activities
+• Secure and private communication
+
+Security Reminder:
+This confirmation link will expire in 24 hours for your security. If you didn't create this account, you can safely ignore this email.
+
+Welcome to the YUHU family! We're here to make your campus experience more connected and engaging.
+
+If you have any questions, feel free to reach out to our support team.
+
+Help Center | Contact Support | Privacy Policy
+
+© 2024 YUHU. All rights reserved. This email was sent to you because you signed up for a YUHU account.

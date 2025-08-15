@@ -1,4 +1,5 @@
 import { supabase } from '@/lib/supabase';
+import { getMessagesReactions, Reaction } from './reactionService';
 import { Database } from '@/types/supabase';
 import { fetchAllUsersExceptCurrent } from './friendService';
 
@@ -245,6 +246,10 @@ export async function getMessages(chatId: string, userId: string): Promise<Messa
     }
   }
 
+  // Fetch all reactions for messages
+  const messageIds = messagesData.map(m => m.id);
+  const reactionsMap = await getMessagesReactions(messageIds);
+
   // Format messages
   const messages = messagesData.map((message, index) => {
     const prevMessage = index > 0 ? messagesData[index - 1] : null;
@@ -275,7 +280,8 @@ export async function getMessages(chatId: string, userId: string): Promise<Messa
       isFirst,
       isConsecutive,
       replyTo: message.replyTo,
-      replyToMessage
+      replyToMessage,
+      reactions: reactionsMap.get(message.id) || []
     };
   });
 

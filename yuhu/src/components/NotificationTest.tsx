@@ -2,217 +2,375 @@ import React, { useState, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Alert, AlertDescription } from '@/components/ui/alert';
-import { Bell, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
-import { notificationService } from '@/services/notificationService';
+import { Switch } from '@/components/ui/switch';
+import { Label } from '@/components/ui/label';
+import { Separator } from '@/components/ui/separator';
+import { notificationService, NotificationPreferences } from '@/services/notificationService';
+import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/sonner';
 
 const NotificationTest: React.FC = () => {
   const [permissionStatus, setPermissionStatus] = useState<NotificationPermission>('default');
-  const [isSupported, setIsSupported] = useState(false);
+  const [preferences, setPreferences] = useState<NotificationPreferences>(notificationService.getPreferences());
+  const [notificationStatus, setNotificationStatus] = useState(notificationService.getStatus());
+  const [realTimeStatus, setRealTimeStatus] = useState<string>('disconnected');
   const [testResults, setTestResults] = useState<string[]>([]);
+  const [isTesting, setIsTesting] = useState(false);
 
   useEffect(() => {
-    setPermissionStatus(notificationService.getPermissionStatus());
-    setIsSupported(notificationService.isSupported());
+    updateStatus();
+    
+    // Update status every 5 seconds
+    const interval = setInterval(updateStatus, 5000);
+    
+    return () => clearInterval(interval);
   }, []);
+
+  const updateStatus = () => {
+    setPermissionStatus(notificationService.getPermissionStatus());
+    setPreferences(notificationService.getPreferences());
+    setNotificationStatus(notificationService.getStatus());
+  };
 
   const addTestResult = (result: string) => {
     setTestResults(prev => [...prev, `${new Date().toLocaleTimeString()}: ${result}`]);
   };
 
-  const testBasicToast = () => {
+  const testBrowserNotification = async () => {
+    addTestResult('Testing browser notification...');
+    
     try {
-      toast('Basic Toast Test', {
-        description: 'This is a test toast notification',
-        duration: 3000,
-      });
-      addTestResult('✅ Basic toast test - SUCCESS');
+      const granted = await notificationService.requestPermission();
+      if (granted) {
+        await notificationService.showSystemNotification(
+          'Test Browser Notification',
+          'This is a test browser notification. If you see this, browser notifications are working!'
+        );
+        addTestResult('✅ Browser notification test successful');
+      } else {
+        addTestResult('❌ Browser notification permission denied');
+      }
     } catch (error) {
-      addTestResult(`❌ Basic toast test - FAILED: ${error}`);
+      addTestResult(`❌ Browser notification test failed: ${error}`);
     }
   };
 
-  const testNotificationService = async () => {
+  const testInAppNotification = async () => {
+    addTestResult('Testing in-app notification...');
+    
     try {
       await notificationService.showSystemNotification(
-        'Notification Service Test',
-        'This is a test notification from the notification service'
+        'Test In-App Notification',
+        'This is a test in-app notification. You should see a toast message.'
       );
-      addTestResult('✅ Notification service test - SUCCESS');
+      addTestResult('✅ In-app notification test successful');
     } catch (error) {
-      addTestResult(`❌ Notification service test - FAILED: ${error}`);
+      addTestResult(`❌ In-app notification test failed: ${error}`);
+    }
+  };
+
+  const testSoundNotification = async () => {
+    addTestResult('Testing sound notification...');
+    
+    try {
+      await notificationService.showSystemNotification(
+        'Test Sound Notification',
+        'This notification should play a sound.'
+      );
+      addTestResult('✅ Sound notification test successful');
+    } catch (error) {
+      addTestResult(`❌ Sound notification test failed: ${error}`);
     }
   };
 
   const testMessageNotification = async () => {
+    addTestResult('Testing message notification...');
+    
     try {
-    await notificationService.showMessageNotification(
+      await notificationService.showMessageNotification(
         'Test User',
-        'This is a test message notification',
-        'test-chat-id'
+        'This is a test message notification to verify the system is working properly.',
+        'test-chat-id',
+        '/chat-icon.png'
       );
-      addTestResult('✅ Message notification test - SUCCESS');
+      addTestResult('✅ Message notification test successful');
     } catch (error) {
-      addTestResult(`❌ Message notification test - FAILED: ${error}`);
+      addTestResult(`❌ Message notification test failed: ${error}`);
     }
   };
 
-  const testCallNotification = async () => {
+  const testRealTimeConnection = async () => {
+    addTestResult('Testing real-time connection...');
+    setIsTesting(true);
+    
     try {
-    await notificationService.showCallNotification(
-        'Test Caller',
-        true,
-        'test-chat-id'
-      );
-      addTestResult('✅ Call notification test - SUCCESS');
+      // Test Supabase connection
+      const { data, error } = await supabase.from('messages').select('count').limit(1);
+      
+      if (error) {
+        addTestResult(`❌ Supabase connection failed: ${error.message}`);
+        setRealTimeStatus('connection-error');
+      } else {
+        addTestResult('✅ Supabase connection successful');
+        
+        // Test real-time subscription
+        const channel = supabase
+          .channel('test-realtime')
+          .on('postgres_changes', { event: '*', schema: 'public', table: 'messages' }, () => {})
+          .subscribe((status) => {
+            if (status === 'SUBSCRIBED') {
+              addTestResult('✅ Real-time subscription successful');
+              setRealTimeStatus('connected');
+            } else if (status === 'CHANNEL_ERROR') {
+              addTestResult('❌ Real-time subscription failed');
+              setRealTimeStatus('subscription-error');
+            } else if (status === 'TIMED_OUT') {
+              addTestResult('❌ Real-time subscription timed out');
+              setRealTimeStatus('timeout');
+            }
+            
+            // Clean up test subscription
+            setTimeout(() => {
+              supabase.removeChannel(channel);
+              setIsTesting(false);
+            }, 2000);
+          });
+      }
     } catch (error) {
-      addTestResult(`❌ Call notification test - FAILED: ${error}`);
+      addTestResult(`❌ Real-time test failed: ${error}`);
+      setIsTesting(false);
     }
   };
 
-  const requestPermission = async () => {
+  const runFullTest = async () => {
+    addTestResult('🚀 Starting full notification system test...');
+    setIsTesting(true);
+    
     try {
-      const granted = await notificationService.requestPermission();
-      setPermissionStatus(notificationService.getPermissionStatus());
-      addTestResult(`Permission request - ${granted ? 'GRANTED' : 'DENIED'}`);
+      // Test 1: Browser notifications
+      await testBrowserNotification();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Test 2: In-app notifications
+      await testInAppNotification();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Test 3: Sound notifications
+      await testSoundNotification();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Test 4: Message notifications
+      await testMessageNotification();
+      await new Promise(resolve => setTimeout(resolve, 1000));
+      
+      // Test 5: Real-time connection
+      await testRealTimeConnection();
+      
+      addTestResult('🎉 Full test completed!');
     } catch (error) {
-      addTestResult(`❌ Permission request - FAILED: ${error}`);
+      addTestResult(`❌ Full test failed: ${error}`);
+    } finally {
+      setIsTesting(false);
     }
   };
 
-  const checkPreferences = () => {
-    const prefs = notificationService.getPreferences();
-    addTestResult(`Current preferences: ${JSON.stringify(prefs, null, 2)}`);
+  const updatePreference = (key: keyof NotificationPreferences, value: boolean) => {
+    const newPreferences = { ...preferences, [key]: value };
+    notificationService.updatePreferences(newPreferences);
+    setPreferences(newPreferences);
+    addTestResult(`Updated ${key}: ${value}`);
   };
 
-  const runAllTests = async () => {
+  const clearTestResults = () => {
     setTestResults([]);
-    addTestResult('🧪 Starting comprehensive notification tests...');
-    
-    // Basic info
-    addTestResult(`Browser support: ${isSupported ? 'YES' : 'NO'}`);
-    addTestResult(`Permission status: ${permissionStatus}`);
-    
-    // Test basic toast
-    testBasicToast();
-    
-    // Wait a bit then test service
-    setTimeout(async () => {
-      await testNotificationService();
-      setTimeout(async () => {
-    await testMessageNotification();
-        setTimeout(async () => {
-          await testCallNotification();
-          addTestResult('🏁 All tests completed');
-        }, 1000);
-      }, 1000);
-    }, 1000);
   };
 
-  const getStatusIcon = () => {
-    if (!isSupported) return <XCircle className="h-5 w-5 text-red-500" />;
-    if (permissionStatus === 'granted') return <CheckCircle className="h-5 w-5 text-green-500" />;
-    if (permissionStatus === 'denied') return <XCircle className="h-5 w-5 text-red-500" />;
-    return <AlertCircle className="h-5 w-5 text-yellow-500" />;
-  };
-
-  const getStatusColor = () => {
-    if (!isSupported || permissionStatus === 'denied') return 'destructive';
-    if (permissionStatus === 'granted') return 'default';
-    return 'secondary';
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case 'connected': return 'bg-green-500';
+      case 'disconnected': return 'bg-gray-500';
+      case 'connection-error': return 'bg-red-500';
+      case 'subscription-error': return 'bg-orange-500';
+      case 'timeout': return 'bg-yellow-500';
+      default: return 'bg-gray-500';
+    }
   };
 
   return (
-    <Card className="w-full max-w-2xl mx-auto">
+    <div className="container mx-auto p-6 max-w-4xl space-y-6">
+      <div className="text-center">
+        <h1 className="text-3xl font-bold mb-2">🔔 Notification System Debugger</h1>
+        <p className="text-muted-foreground">
+          Test and debug your notification system to ensure real-time notifications work properly
+        </p>
+      </div>
+
+      {/* Status Overview */}
+      <Card>
         <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bell className="h-5 w-5" />
-          Notification System Test
-          </CardTitle>
-          <CardDescription>
-          Test and debug your notification system
-          </CardDescription>
+          <CardTitle>System Status</CardTitle>
+          <CardDescription>Current notification system status</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-        {/* Status Section */}
-        <div className="flex items-center justify-between p-4 border rounded-lg">
-          <div className="flex items-center gap-2">
-            {getStatusIcon()}
-            <span className="font-medium">Notification Status</span>
-          </div>
-          <Badge variant={getStatusColor()}>
-            {!isSupported ? 'Not Supported' : permissionStatus}
-          </Badge>
-        </div>
-
-        {/* Alerts */}
-        {!isSupported && (
-          <Alert variant="destructive">
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Your browser does not support notifications. Try using a modern browser like Chrome, Firefox, or Safari.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {permissionStatus === 'denied' && (
-          <Alert variant="destructive">
-            <XCircle className="h-4 w-4" />
-            <AlertDescription>
-              Notification permission has been denied. Please enable notifications in your browser settings and refresh the page.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {permissionStatus === 'default' && (
-          <Alert>
-            <AlertCircle className="h-4 w-4" />
-            <AlertDescription>
-              Notification permission has not been requested yet. Click "Request Permission" below.
-            </AlertDescription>
-          </Alert>
-        )}
-
-        {/* Test Buttons */}
-        <div className="grid grid-cols-2 gap-3">
-          <Button onClick={testBasicToast} variant="outline">
-            Test Basic Toast
-          </Button>
-          <Button onClick={testNotificationService} variant="outline">
-            Test Notification Service
-          </Button>
-          <Button onClick={testMessageNotification} variant="outline">
-            Test Message Notification
-          </Button>
-          <Button onClick={testCallNotification} variant="outline">
-            Test Call Notification
-          </Button>
-          <Button onClick={requestPermission} variant="default">
-            Request Permission
-          </Button>
-          <Button onClick={checkPreferences} variant="outline">
-            Check Preferences
-          </Button>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="text-center">
+              <div className="text-2xl font-bold mb-2">🔐</div>
+              <div className="text-sm text-muted-foreground">Permission</div>
+              <Badge variant={permissionStatus === 'granted' ? 'default' : 'destructive'}>
+                {permissionStatus}
+              </Badge>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold mb-2">📡</div>
+              <div className="text-sm text-muted-foreground">Real-time</div>
+              <Badge className={getStatusColor(realTimeStatus)}>
+                {realTimeStatus}
+              </Badge>
+            </div>
+            <div className="text-center">
+              <div className="text-2xl font-bold mb-2">🎵</div>
+              <div className="text-sm text-muted-foreground">Audio</div>
+              <Badge variant={notificationStatus.audioReady ? 'default' : 'destructive'}>
+                {notificationStatus.audioReady ? 'Ready' : 'Not Ready'}
+              </Badge>
+            </div>
           </div>
           
-        <Button onClick={runAllTests} className="w-full" variant="default">
-          Run All Tests
-        </Button>
-
-        {/* Test Results */}
-        {testResults.length > 0 && (
-          <div className="mt-6">
-            <h3 className="font-semibold mb-2">Test Results:</h3>
-            <div className="bg-muted p-3 rounded-lg max-h-60 overflow-y-auto">
-              <pre className="text-sm whitespace-pre-wrap">
-                {testResults.join('\n')}
-              </pre>
+          <Separator />
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div>
+              <h4 className="font-semibold mb-2">Notification Preferences</h4>
+              <div className="space-y-2">
+                {Object.entries(preferences).map(([key, value]) => (
+                  <div key={key} className="flex items-center justify-between">
+                    <Label htmlFor={key} className="text-sm capitalize">
+                      {key.replace(/([A-Z])/g, ' $1').trim()}
+                    </Label>
+                    <Switch
+                      id={key}
+                      checked={value}
+                      onCheckedChange={(checked) => updatePreference(key as keyof NotificationPreferences, checked)}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+            
+            <div>
+              <h4 className="font-semibold mb-2">System Info</h4>
+              <div className="text-sm space-y-1">
+                <div>Supported: {notificationStatus.supported ? '✅' : '❌'}</div>
+                <div>Queue Length: {notificationStatus.queueLength}</div>
+                <div>Processing: {notificationStatus.isProcessingQueue ? '✅' : '❌'}</div>
+                <div>Permission: {notificationStatus.permission}</div>
+              </div>
+            </div>
           </div>
-          </div>
-        )}
         </CardContent>
       </Card>
+
+      {/* Test Controls */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Test Controls</CardTitle>
+          <CardDescription>Test different aspects of the notification system</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-2">
+            <Button onClick={testBrowserNotification} variant="outline" disabled={isTesting}>
+              Test Browser
+            </Button>
+            <Button onClick={testInAppNotification} variant="outline" disabled={isTesting}>
+              Test In-App
+            </Button>
+            <Button onClick={testSoundNotification} variant="outline" disabled={isTesting}>
+              Test Sound
+            </Button>
+            <Button onClick={testMessageNotification} variant="outline" disabled={isTesting}>
+              Test Message
+            </Button>
+          </div>
+          
+          <div className="flex gap-2">
+            <Button onClick={testRealTimeConnection} disabled={isTesting} className="flex-1">
+              Test Real-time Connection
+            </Button>
+            <Button onClick={runFullTest} disabled={isTesting} className="flex-1">
+              🚀 Run Full Test
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Test Results */}
+      <Card>
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <div>
+              <CardTitle>Test Results</CardTitle>
+              <CardDescription>Results from notification tests</CardDescription>
+            </div>
+            <Button onClick={clearTestResults} variant="outline" size="sm">
+              Clear
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <div className="max-h-64 overflow-y-auto space-y-1">
+            {testResults.length === 0 ? (
+              <div className="text-muted-foreground text-center py-8">
+                No test results yet. Run some tests to see results here.
+              </div>
+            ) : (
+              testResults.map((result, index) => (
+                <div key={index} className="text-sm font-mono p-2 bg-muted rounded">
+                  {result}
+                </div>
+              ))
+            )}
+          </div>
+        </CardContent>
+      </Card>
+
+      {/* Troubleshooting Tips */}
+      <Card>
+        <CardHeader>
+          <CardTitle>🔧 Troubleshooting Tips</CardTitle>
+          <CardDescription>Common issues and solutions</CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="p-3 bg-blue-50 dark:bg-blue-950 rounded-lg">
+            <h4 className="font-semibold text-blue-900 dark:text-blue-100">Real-time Notifications Not Working?</h4>
+            <ul className="text-sm text-blue-800 dark:text-blue-200 mt-2 space-y-1">
+              <li>• Check browser console for 🔔 logs</li>
+              <li>• Ensure Supabase real-time is enabled in your project</li>
+              <li>• Verify database triggers are set up correctly</li>
+              <li>• Check if you're receiving real-time events in the console</li>
+            </ul>
+          </div>
+          
+          <div className="p-3 bg-yellow-50 dark:bg-yellow-950 rounded-lg">
+            <h4 className="font-semibold text-yellow-900 dark:text-yellow-100">Browser Notifications Not Showing?</h4>
+            <ul className="text-sm text-yellow-800 dark:text-yellow-200 mt-2 space-y-1">
+              <li>• Check notification permissions in browser settings</li>
+              <li>• Ensure the page is not in focus (notifications don't show when focused)</li>
+              <li>• Try refreshing the page and granting permissions again</li>
+            </ul>
+          </div>
+          
+          <div className="p-3 bg-green-50 dark:bg-green-950 rounded-lg">
+            <h4 className="font-semibold text-green-900 dark:text-green-100">Quick Fixes</h4>
+            <ul className="text-sm text-green-800 dark:text-green-200 mt-2 space-y-1">
+              <li>• Run the full test to identify specific issues</li>
+              <li>• Check the console logs for detailed error messages</li>
+              <li>• Verify your Supabase configuration and real-time settings</li>
+              <li>• Test with a different browser to isolate issues</li>
+            </ul>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
   );
 };
 

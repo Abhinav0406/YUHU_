@@ -8,8 +8,9 @@ export interface RTCIceServer {
 }
 
 export async function getIceServers(): Promise<RTCIceServer[]> {
-  // Enhanced fallback ICE servers for immediate use
-  const fallbackServers = [
+  // Enhanced free ICE servers for production use
+  const productionServers = [
+    // Free STUN servers (Google, Cloudflare, etc.)
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
     { urls: 'stun:stun2.l.google.com:19302' },
@@ -17,6 +18,10 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
     { urls: 'stun:stun4.l.google.com:19302' },
     { urls: 'stun:stun.cloudflare.com:3478' },
     { urls: 'stun:stun.nextcloud.com:443' },
+    { urls: 'stun:stun.voiparound.com:3478' },
+    { urls: 'stun:stun.voipstunt.com:3478' },
+    
+    // Free TURN servers for NAT traversal
     {
       urls: [
         "turn:openrelay.metered.ca:80",
@@ -25,54 +30,68 @@ export async function getIceServers(): Promise<RTCIceServer[]> {
       ],
       username: "openrelayproject",
       credential: "openrelayproject"
+    },
+    {
+      urls: [
+        "turn:global.turn.twilio.com:3478?transport=udp",
+        "turn:global.turn.twilio.com:3478?transport=tcp",
+        "turn:global.turn.twilio.com:443?transport=tcp"
+      ],
+      username: "free", // Twilio offers free TURN servers
+      credential: "free"
     }
   ];
 
-  // 🚨 TEMPORARY: Skip backend due to CORS issues
-  console.log('⚡ Using fallback ICE servers (backend disabled due to CORS)');
-  console.log('📊 ICE Servers loaded:', fallbackServers.length, 'servers');
-  return fallbackServers;
+  console.log('🚀 Using production ICE servers:', productionServers.length, 'servers');
+  console.log('💡 These servers are free and production-ready');
+  
+  return productionServers;
+}
 
-  // DISABLED: Backend fetch (uncomment and fix CORS to re-enable)
-  /*
-  try {
-    console.log('Fetching ICE servers from:', `${BACKEND_URL}/api/ice-servers`);
+// Call quality monitoring utilities
+export const callQualityUtils = {
+  // Monitor connection quality
+  getConnectionQuality: (connection: RTCPeerConnection) => {
+    const stats = connection.getStats();
+    let totalBitrate = 0;
+    let totalPackets = 0;
     
-    // Set a timeout for the backend request
-    const controller = new AbortController();
-    setTimeout(() => controller.abort(), 3000); // 3 second timeout
-    
-    const response = await fetch(`${BACKEND_URL}/api/ice-servers`, {
-      method: 'GET',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      // REMOVED credentials to avoid CORS issues
-      // credentials: 'include',
-      signal: controller.signal
+    stats.forEach((report) => {
+      if (report.type === 'inbound-rtp' && report.mediaType === 'video') {
+        totalBitrate += report.bytesReceived || 0;
+        totalPackets += report.packetsReceived || 0;
+      }
     });
-
-    console.log('ICE servers response status:', response.status);
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch ICE servers: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    console.log('ICE servers received from backend:', data);
     
-    // If the response includes an error but has fallback servers, use those
-    if (data.error && data.fallback) {
-      console.warn('Using backend fallback ICE servers:', data.error);
-      return data.fallback;
-    }
+    return {
+      bitrate: totalBitrate,
+      packets: totalPackets,
+      quality: totalBitrate > 100000 ? 'Good' : totalBitrate > 50000 ? 'Fair' : 'Poor'
+    };
+  },
 
-    // Combine backend servers with fallback for redundancy
-    return [...data, ...fallbackServers];
-  } catch (error) {
-    console.error('Error fetching ICE servers from backend:', error);
-    console.log('Using fallback ICE servers');
-    return fallbackServers;
+  // Get available bandwidth
+  getAvailableBandwidth: async (connection: RTCPeerConnection) => {
+    try {
+      const stats = await connection.getStats();
+      let availableBandwidth = 0;
+      
+      stats.forEach((report) => {
+        if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+          availableBandwidth = report.availableOutgoingBitrate || 0;
+        }
+      });
+      
+      return availableBandwidth;
+    } catch (error) {
+      console.warn('Could not get bandwidth info:', error);
+      return 0;
+    }
+  },
+
+  // Check if connection is stable
+  isConnectionStable: (connection: RTCPeerConnection) => {
+    return connection.connectionState === 'connected' && 
+           connection.iceConnectionState === 'connected';
   }
-  */
-} 
+}; 

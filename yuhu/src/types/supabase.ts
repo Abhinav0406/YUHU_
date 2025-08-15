@@ -122,6 +122,28 @@ export interface Database {
           status?: 'sent' | 'delivered' | 'read'
         }
       }
+      message_reactions: {
+        Row: {
+          id: string
+          message_id: string
+          user_id: string
+          emoji: string
+          created_at: string
+        }
+        Insert: {
+          id?: string
+          message_id: string
+          user_id: string
+          emoji: string
+          created_at?: string
+        }
+        Update: {
+          id?: string
+          message_id?: string
+          user_id?: string
+          emoji?: string
+        }
+      }
       friends: {
         Row: {
           id: string

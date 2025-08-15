@@ -22,6 +22,7 @@ import { subscribeToSignaling, sendSignal, SignalMessage } from '@/lib/webrtcSig
 import { getIceServers } from '@/services/iceService';
 import { toast } from '@/components/ui/sonner';
 import { notificationService } from '@/services/notificationService';
+import { subscribeToTyping } from '@/services/typingService';
 
 interface ChatWindowProps {
   chatId?: string;
@@ -49,6 +50,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   
   const activeChatId = propChatId || paramChatId;
   const [isTyping, setIsTyping] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
   
   // Get chat details
   const { 
@@ -165,7 +167,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     }, 100);
   };
 
-  // Real-time subscription for new messages (all chats)
+  // Real-time subscription for new messages and reactions (all chats)
   useEffect(() => {
     // Request notification permission on mount and log status
     const initializeNotifications = async () => {
@@ -208,12 +210,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           queryClient.invalidateQueries({ queryKey: ['chats'] });
         }
       )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'message_reactions',
+        },
+        (payload) => {
+          // Invalidate messages for all chats to update reactions
+          queryClient.invalidateQueries({ queryKey: ['messages'] });
+        }
+      )
       .subscribe();
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [queryClient, user]);
+
+  // Subscribe to typing indicators for the current chat
+  useEffect(() => {
+    if (!activeChatId || !user?.id) return;
+
+    const unsubscribe = subscribeToTyping(activeChatId, (users) => {
+      // Filter out the current user from typing indicators
+      const otherUsersTyping = users.filter(username => username !== profile?.username);
+      setTypingUsers(otherUsersTyping);
+    });
+
+    return unsubscribe;
+  }, [activeChatId, user?.id, profile?.username]);
 
   const clearChatMutation = useMutation({
     mutationFn: () => clearChat(activeChatId!),
@@ -926,14 +953,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               onReply={() => handleReply(message)}
             />
           ))}
-          {isTyping && (
+          {typingUsers.length > 0 && (
             <div className="flex items-center">
               <Avatar className="h-7 w-7">
                 <AvatarImage src={chatDetails.avatar} alt={chatDetails.name} />
                 <AvatarFallback>{chatDetails.name[0]}</AvatarFallback>
               </Avatar>
               <div className="ml-2 bg-muted px-3 py-2 rounded-full">
-                <div className="typing-indicator">
+                <div className="text-sm text-muted-foreground">
+                  {typingUsers.length === 1 
+                    ? `${typingUsers[0]} is typing...`
+                    : `${typingUsers.join(', ')} are typing...`
+                  }
+                </div>
+                <div className="typing-indicator mt-1">
                   <span></span>
                   <span></span>
                   <span></span>
@@ -953,6 +986,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           replyTo={replyTo}
           replyToMessage={replyToMessage}
           onCancelReply={clearReply}
+          chatId={activeChatId}
+          userId={user?.id}
+          username={profile?.username}
         />
       </div>
 

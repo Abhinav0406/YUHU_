@@ -5,6 +5,7 @@ import { cn } from '@/lib/utils';
 import { Send, Paperclip, Smile, Loader2, Mic, Square, X, Image as ImageIcon, Trash2 } from 'lucide-react';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
+import { createTypingDebouncer } from '@/services/typingService';
 
 interface MessageInputProps {
   onSendMessage: (message: string | { type: string; content: string | string[]; replyTo?: string }) => void;
@@ -12,6 +13,9 @@ interface MessageInputProps {
   replyTo?: string | null;
   replyToMessage?: any;
   onCancelReply?: () => void;
+  chatId?: string;
+  userId?: string;
+  username?: string;
 }
 
 interface SelectedFile {
@@ -28,7 +32,10 @@ const MessageInput: React.FC<MessageInputProps> = ({
   disabled = false,
   replyTo,
   replyToMessage,
-  onCancelReply
+  onCancelReply,
+  chatId,
+  userId,
+  username
 }) => {
   const [message, setMessage] = useState('');
   const [uploading, setUploading] = useState(false);
@@ -43,6 +50,31 @@ const MessageInput: React.FC<MessageInputProps> = ({
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const recordingTimerRef = useRef<NodeJS.Timeout>();
+
+  // Typing indicator functionality
+  const typingDebouncerRef = useRef<ReturnType<typeof createTypingDebouncer> | null>(null);
+
+  // Initialize typing debouncer when chatId, userId, or username changes
+  useEffect(() => {
+    if (chatId && userId && username) {
+      typingDebouncerRef.current = createTypingDebouncer(chatId, userId, username);
+    }
+
+    return () => {
+      if (typingDebouncerRef.current) {
+        typingDebouncerRef.current.cleanup();
+      }
+    };
+  }, [chatId, userId, username]);
+
+  // Cleanup typing indicator when component unmounts
+  useEffect(() => {
+    return () => {
+      if (typingDebouncerRef.current) {
+        typingDebouncerRef.current.cleanup();
+      }
+    };
+  }, []);
 
   // Aggressive focus restoration
   useEffect(() => {
@@ -95,11 +127,33 @@ const MessageInput: React.FC<MessageInputProps> = ({
     }
   };
 
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const newValue = e.target.value;
+    setMessage(newValue);
+    
+    // Trigger typing indicator
+    if (typingDebouncerRef.current && newValue.trim()) {
+      typingDebouncerRef.current.startTyping();
+    }
+  };
+
+  const handleInputFocus = () => {
+    // Stop typing indicator when input is focused (user is actively typing)
+    if (typingDebouncerRef.current && message.trim()) {
+      typingDebouncerRef.current.startTyping();
+    }
+  };
+
   const handleSendMessage = () => {
     if ((!message.trim() && selectedFiles.length === 0) || disabled) return;
     
     const currentMessage = message.trim();
     setLastSentTime(Date.now());
+
+    // Stop typing indicator when sending message
+    if (typingDebouncerRef.current) {
+      typingDebouncerRef.current.stopTyping();
+    }
 
     if (selectedFiles.length > 0) {
       // Send multiple images
@@ -487,8 +541,9 @@ const MessageInput: React.FC<MessageInputProps> = ({
             placeholder="Type a message or drag & drop images..."
             className="min-h-12 resize-none px-3 py-2 border-none shadow-none focus-visible:ring-0"
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            onChange={handleInputChange}
             onKeyDown={handleKeyDown}
+            onFocus={handleInputFocus}
             disabled={disabled || uploading || isRecording}
             rows={1}
             ref={textareaRef}
