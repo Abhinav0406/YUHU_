@@ -13,6 +13,7 @@ import CallHistory from "./pages/CallHistory";
 import NotificationSettings from "./components/NotificationSettings";
 import TestNotifications from "./pages/TestNotifications";
 import TestWebRTC from "./pages/TestWebRTC";
+import TestMultipleImages from "./pages/TestMultipleImages";
 
 // Create a client
 const queryClient = new QueryClient({
@@ -40,6 +41,7 @@ const App = () => (
             <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
             <Route path="/test-notifications" element={<ProtectedRoute><TestNotifications /></ProtectedRoute>} />
             <Route path="/test-webrtc" element={<ProtectedRoute><TestWebRTC /></ProtectedRoute>} />
+            <Route path="/test-multiple-images" element={<ProtectedRoute><TestMultipleImages /></ProtectedRoute>} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </BrowserRouter>

@@ -3,8 +3,8 @@ import Layout from '../components/Layout';
 import Header from '../components/Header';
 import UserList from '../components/UserList';
 import { Input } from '@/components/ui/input';
-import { Search, X } from 'lucide-react';
-import { getFriends } from '../services/friendService';
+import { Search, X, RefreshCw } from 'lucide-react';
+import { getFriends, getPendingRequests, fetchAllUsersExceptCurrent, respondToFriendRequest, subscribeToProfileChanges, subscribeToFriendsChanges, refreshFriendsList } from '../services/friendService';
 import { supabase } from '@/lib/supabase';
 import { getOrCreateDirectChatByEmail } from '../services/chatService';
 import ChatWindow from '../components/ChatWindow';
@@ -69,6 +69,65 @@ const Chat = () => {
     fetchFriends();
   }, [userEmail]);
 
+  // Add real-time subscriptions for profile and friends changes
+  useEffect(() => {
+    if (!userEmail) return;
+
+    // Subscribe to profile changes (including deletions)
+    const profileSubscription = subscribeToProfileChanges((change) => {
+      console.log('Profile change detected:', change);
+      
+      if (change.event === 'DELETE') {
+        // Remove deleted user from friends list
+        setFriends(prevFriends => 
+          prevFriends.filter(friend => friend.id !== change.old.id)
+        );
+      } else if (change.event === 'UPDATE') {
+        // Update user profile in friends list
+        setFriends(prevFriends => 
+          prevFriends.map(friend => 
+            friend.id === change.new.id 
+              ? { ...friend, ...change.new }
+              : friend
+          )
+        );
+      }
+    });
+
+    // Subscribe to friends table changes
+    const friendsSubscription = subscribeToFriendsChanges((change) => {
+      console.log('Friends change detected:', change);
+      
+      if (change.event === 'DELETE') {
+        // Refresh friends list when friendship is removed
+        const refreshFriends = async () => {
+          const friendsData = await getFriends(userEmail);
+          const friendEmails = friendsData.map(f => f.user1_email === userEmail ? f.user2_email : f.user1_email);
+          if (friendEmails.length > 0) {
+            const { data: profiles, error } = await supabase
+              .from('profiles')
+              .select('id, username, email, avatar_url')
+              .in('email', friendEmails);
+            if (!error && profiles) {
+              setFriends(profiles);
+            } else {
+              setFriends([]);
+            }
+          } else {
+            setFriends([]);
+          }
+        };
+        refreshFriends();
+      }
+    });
+
+    // Cleanup subscriptions
+    return () => {
+      profileSubscription.unsubscribe();
+      friendsSubscription.unsubscribe();
+    };
+  }, [userEmail]);
+
   // Filter friends by search
   const filteredFriends = friends.filter(friend =>
     friend.username?.toLowerCase().includes(search.toLowerCase()) ||
@@ -91,6 +150,20 @@ const Chat = () => {
     setSidebarOpen(false); // Close sidebar on mobile after selecting
   };
 
+  // Manual refresh function
+  const handleRefreshFriends = async () => {
+    if (!userEmail) return;
+    setLoading(true);
+    try {
+      const refreshedFriends = await refreshFriendsList(userEmail);
+      setFriends(refreshedFriends);
+    } catch (error) {
+      console.error('Error refreshing friends:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-zinc-900 text-zinc-100">
       <Header onSidebarToggle={() => setSidebarOpen(true)} />
@@ -98,14 +171,24 @@ const Chat = () => {
         {/* Sidebar - Desktop */}
         <aside className="hidden md:flex w-[340px] flex-col border-r border-zinc-800 bg-zinc-950/95 shadow-lg h-full">
           <div className="p-4 border-b border-zinc-800">
-            <div className="relative mb-4">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 h-4 w-4" />
-              <Input
-                className="pl-9 py-2 rounded-lg bg-zinc-900 text-zinc-100 border-zinc-700 focus:ring-yuhu-primary"
-                placeholder="Search chats or users..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
+            <div className="flex items-center justify-between mb-4">
+              <div className="relative flex-1 mr-2">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 h-4 w-4" />
+                <Input
+                  className="pl-9 py-2 rounded-lg bg-zinc-900 text-zinc-100 border-zinc-700 focus:ring-yuhu-primary"
+                  placeholder="Search chats or users..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                />
+              </div>
+              <button
+                onClick={handleRefreshFriends}
+                disabled={loading}
+                className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
+                title="Refresh friends list"
+              >
+                <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+              </button>
             </div>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2">
@@ -135,14 +218,24 @@ const Chat = () => {
                 <X className="h-6 w-6 text-white" />
               </button>
               <div className="p-4 border-b border-zinc-800">
-                <div className="relative mb-4">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 h-4 w-4" />
-                  <Input
-                    className="pl-9 py-2 rounded-lg bg-zinc-900 text-zinc-100 border-zinc-700 focus:ring-yuhu-primary"
-                    placeholder="Search chats or users..."
-                    value={search}
-                    onChange={e => setSearch(e.target.value)}
-                  />
+                <div className="flex items-center justify-between mb-4">
+                  <div className="relative flex-1 mr-2">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500 h-4 w-4" />
+                    <Input
+                      className="pl-9 py-2 rounded-lg bg-zinc-900 text-zinc-100 border-zinc-700 focus:ring-yuhu-primary"
+                      placeholder="Search chats or users..."
+                      value={search}
+                      onChange={e => setSearch(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    onClick={handleRefreshFriends}
+                    disabled={loading}
+                    className="p-2 rounded-lg bg-zinc-800 hover:bg-zinc-700 text-zinc-400 hover:text-zinc-200 transition-colors disabled:opacity-50"
+                    title="Refresh friends list"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
+                  </button>
                 </div>
               </div>
               <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2">

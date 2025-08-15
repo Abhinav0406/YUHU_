@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '@/context/AuthContext';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { cn } from '@/lib/utils';
-import { MoreVertical, Trash2, Play, Pause, FileText, Download, X, ZoomIn, ZoomOut } from 'lucide-react';
+import { MoreVertical, Trash2, Play, Pause, FileText, Download, X, ZoomIn, ZoomOut, ImageIcon, ChevronLeft, ChevronRight, Maximize, Minimize } from 'lucide-react';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -21,34 +21,67 @@ const ImageModal: React.FC<{
   onClose: () => void;
   imageUrl: string;
   altText?: string;
-}> = ({ isOpen, onClose, imageUrl, altText = "Image" }) => {
+  imageUrls?: string[];
+  currentIndex?: number;
+}> = ({ isOpen, onClose, imageUrl, altText = "Image", imageUrls, currentIndex = 0 }) => {
   const [zoom, setZoom] = useState(1);
   const [position, setPosition] = useState({ x: 0, y: 0 });
   const [isDragging, setIsDragging] = useState(false);
   const [dragStart, setDragStart] = useState({ x: 0, y: 0 });
+  const [currentImageIndex, setCurrentImageIndex] = useState(currentIndex);
+  const [touchStart, setTouchStart] = useState<number | null>(null);
+  const [touchEnd, setTouchEnd] = useState<number | null>(null);
+  const [isImageLoading, setIsImageLoading] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [imageError, setImageError] = useState(false);
 
-  // Reset zoom and position when modal opens
+  // Reset zoom and position when modal opens or image changes
   useEffect(() => {
     if (isOpen) {
       setZoom(1);
       setPosition({ x: 0, y: 0 });
+      setCurrentImageIndex(currentIndex);
+      setIsImageLoading(true);
     }
-  }, [isOpen]);
+  }, [isOpen, currentIndex]);
 
-  // Handle ESC key to close
+  // Handle keyboard shortcuts
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
+      if (e.key === 'ArrowLeft') handlePrevious();
+      if (e.key === 'ArrowRight') handleNext();
+      if (e.key === 'Home') {
+        if (imageUrls && imageUrls.length > 1) {
+          setCurrentImageIndex(0);
+          setZoom(1);
+          setPosition({ x: 0, y: 0 });
+          setIsImageLoading(true);
+        }
+      }
+      if (e.key === 'End') {
+        if (imageUrls && imageUrls.length > 1) {
+          setCurrentImageIndex(imageUrls.length - 1);
+          setZoom(1);
+          setPosition({ x: 0, y: 0 });
+          setIsImageLoading(true);
+        }
+      }
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        toggleFullscreen();
+      }
     };
     if (isOpen) {
       document.addEventListener('keydown', handleKeyDown);
       return () => document.removeEventListener('keydown', handleKeyDown);
     }
-  }, [isOpen, onClose]);
+  }, [isOpen, onClose, currentImageIndex, imageUrls]);
 
   const handleDownload = async () => {
     try {
-      const response = await fetch(imageUrl);
+      const currentImage = imageUrls && imageUrls.length > 0 ? imageUrls[currentImageIndex] : imageUrl;
+      const response = await fetch(currentImage);
       const blob = await response.blob();
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -65,6 +98,40 @@ const ImageModal: React.FC<{
 
   const handleZoomIn = () => setZoom(prev => Math.min(prev * 1.5, 5));
   const handleZoomOut = () => setZoom(prev => Math.max(prev / 1.5, 0.5));
+
+  const handlePrevious = () => {
+    if (imageUrls && imageUrls.length > 1) {
+      setIsImageLoading(true);
+      setCurrentImageIndex(prev => (prev > 0 ? prev - 1 : imageUrls.length - 1));
+      setZoom(1);
+      setPosition({ x: 0, y: 0 });
+      // Add visual feedback
+      const img = document.querySelector('.image-modal-img') as HTMLElement;
+      if (img) {
+        img.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          if (img) img.style.transform = 'scale(1)';
+        }, 150);
+      }
+    }
+  };
+
+  const handleNext = () => {
+    if (imageUrls && imageUrls.length > 1) {
+      setIsImageLoading(true);
+      setCurrentImageIndex(prev => (prev < imageUrls.length - 1 ? prev + 1 : 0));
+      setZoom(1);
+      setPosition({ x: 0, y: 0 });
+      // Add visual feedback
+      const img = document.querySelector('.image-modal-img') as HTMLElement;
+      if (img) {
+        img.style.transform = 'scale(0.95)';
+        setTimeout(() => {
+          if (img) img.style.transform = 'scale(1)';
+        }, 150);
+      }
+    }
+  };
 
   const handleMouseDown = (e: React.MouseEvent) => {
     if (zoom > 1) {
@@ -85,6 +152,53 @@ const ImageModal: React.FC<{
   const handleMouseUp = () => {
     setIsDragging(false);
   };
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    setTouchStart(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    setTouchEnd(e.targetTouches[0].clientX);
+  };
+
+  const handleTouchEnd = () => {
+    if (!touchStart || !touchEnd) return;
+    
+    const distance = touchStart - touchEnd;
+    const isLeftSwipe = distance > 50;
+    const isRightSwipe = distance < -50;
+
+    if (isLeftSwipe && hasMultipleImages) {
+      handleNext();
+    } else if (isRightSwipe && hasMultipleImages) {
+      handlePrevious();
+    }
+
+    setTouchStart(null);
+    setTouchEnd(null);
+  };
+
+  const handleImageLoad = () => {
+    setIsImageLoading(false);
+    setImageError(false);
+  };
+
+  const handleImageError = () => {
+    setIsImageLoading(false);
+    setImageError(true);
+  };
+
+  const toggleFullscreen = () => {
+    setIsFullscreen(!isFullscreen);
+    if (!isFullscreen) {
+      document.documentElement.requestFullscreen?.();
+    } else {
+      document.exitFullscreen?.();
+    }
+  };
+
+  const currentImage = imageUrls && imageUrls.length > 0 ? imageUrls[currentImageIndex] : imageUrl;
+  const hasMultipleImages = imageUrls && imageUrls.length > 1;
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
@@ -126,21 +240,134 @@ const ImageModal: React.FC<{
             >
               <Download className="h-5 w-5" />
             </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="text-white hover:bg-white/20"
+              onClick={toggleFullscreen}
+            >
+              {isFullscreen ? (
+                <Minimize className="h-5 w-5" />
+              ) : (
+                <Maximize className="h-5 w-5" />
+              )}
+            </Button>
           </div>
+
+          {/* Navigation buttons */}
+          {hasMultipleImages && (
+            <>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "absolute left-4 top-1/2 -translate-y-1/2 z-10 text-white hover:bg-white/20 hover:scale-110 transition-transform duration-200 bg-black/30 hover:bg-black/50",
+                  currentImageIndex === 0 && "opacity-50 cursor-not-allowed"
+                )}
+                onClick={handlePrevious}
+                disabled={currentImageIndex === 0}
+              >
+                <ChevronLeft className="h-8 w-8 md:h-10 md:w-10" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="icon"
+                className={cn(
+                  "absolute right-4 top-1/2 -translate-y-1/2 z-10 text-white hover:bg-white/20 hover:scale-110 transition-transform duration-200 bg-black/30 hover:bg-black/50",
+                  currentImageIndex === imageUrls.length - 1 && "opacity-50 cursor-not-allowed"
+                )}
+                onClick={handleNext}
+                disabled={currentImageIndex === imageUrls.length - 1}
+              >
+                <ChevronRight className="h-8 w-8 md:h-10 md:w-10" />
+              </Button>
+            </>
+          )}
+
+          {/* Image counter and navigation hints */}
+          {hasMultipleImages && (
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 text-center">
+              <div className="text-white bg-black/50 px-3 py-1 rounded-full text-sm mb-2">
+                {currentImageIndex + 1} / {imageUrls.length}
+              </div>
+              {/* Progress dots */}
+              <div className="flex justify-center gap-2 mb-2">
+                {imageUrls.map((url, index) => (
+                  <div
+                    key={index}
+                    className={cn(
+                      "relative w-2 h-2 rounded-full transition-all duration-200",
+                      index === currentImageIndex 
+                        ? "bg-white scale-125" 
+                        : "bg-white/50 hover:bg-white/70 cursor-pointer"
+                    )}
+                    onClick={() => {
+                      setCurrentImageIndex(index);
+                      setZoom(1);
+                      setPosition({ x: 0, y: 0 });
+                      setIsImageLoading(true);
+                    }}
+                    onMouseEnter={(e) => {
+                      // Show thumbnail preview on hover
+                      const tooltip = e.currentTarget.querySelector('.thumbnail-preview');
+                      if (tooltip) {
+                        (tooltip as HTMLElement).style.opacity = '1';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      // Hide thumbnail preview
+                      const tooltip = e.currentTarget.querySelector('.thumbnail-preview');
+                      if (tooltip) {
+                        (tooltip as HTMLElement).style.opacity = '0';
+                      }
+                    }}
+                  >
+                    {/* Thumbnail preview */}
+                    <div className="thumbnail-preview absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 transition-opacity duration-200 pointer-events-none z-30">
+                      <img
+                        src={url}
+                        alt={`Preview ${index + 1}`}
+                        className="w-16 h-16 object-cover rounded border-2 border-white shadow-lg"
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <div className="text-white/70 bg-black/30 px-2 py-1 rounded text-xs">
+                Use ← → keys, swipe, or click buttons to navigate
+              </div>
+              <div className="text-white/50 bg-black/20 px-2 py-1 rounded text-xs mt-1">
+                Home/End: First/Last • F: Fullscreen
+              </div>
+            </div>
+          )}
+
+          {/* Loading indicator */}
+          {isImageLoading && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/50 z-20">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white"></div>
+            </div>
+          )}
 
           {/* Image */}
           <img
-            src={imageUrl}
+            src={currentImage}
             alt={altText}
-            className="max-w-full max-h-full object-contain cursor-move"
+            className="max-w-full max-h-full object-contain cursor-move image-modal-img"
             style={{
               transform: `scale(${zoom}) translate(${position.x / zoom}px, ${position.y / zoom}px)`,
               transition: isDragging ? 'none' : 'transform 0.2s ease',
+              opacity: isImageLoading ? 0.7 : 1,
             }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onMouseLeave={handleMouseUp}
+            onTouchStart={handleTouchStart}
+            onTouchMove={handleTouchMove}
+            onTouchEnd={handleTouchEnd}
+            onLoad={handleImageLoad}
+            onError={handleImageError}
             draggable={false}
           />
         </div>
@@ -193,6 +420,8 @@ const Message: React.FC<MessageProps> = ({
   const audioRef = React.useRef<HTMLAudioElement | null>(null);
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
   const [selectedImageUrl, setSelectedImageUrl] = useState('');
+  const [selectedImageUrls, setSelectedImageUrls] = useState<string[] | undefined>();
+  const [selectedImageIndex, setSelectedImageIndex] = useState(0);
 
   // Add state for dropdown open
   const [dropdownOpen, setDropdownOpen] = useState(false);
@@ -261,9 +490,17 @@ const Message: React.FC<MessageProps> = ({
     setIsPlaying(!isPlaying);
   };
 
-  const handleImageClick = (imageUrl: string) => {
+  const handleImageClick = (imageUrl: string, imageUrls?: string[], index?: number) => {
     setSelectedImageUrl(imageUrl);
     setIsImageModalOpen(true);
+    // Store the image array and index for navigation
+    if (imageUrls && index !== undefined) {
+      setSelectedImageUrls(imageUrls);
+      setSelectedImageIndex(index);
+    } else {
+      setSelectedImageUrls(undefined);
+      setSelectedImageIndex(0);
+    }
   };
 
   const renderMessageContent = () => {
@@ -333,7 +570,7 @@ const Message: React.FC<MessageProps> = ({
                   src={part} 
                   alt="sent image" 
                   className="rounded-lg max-w-full max-h-60 border border-zinc-300 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity" 
-                  onClick={() => handleImageClick(part)}
+                  onClick={() => handleImageClick(part, undefined, 0)}
                 />
               );
             }
@@ -354,11 +591,80 @@ const Message: React.FC<MessageProps> = ({
             src={text} 
             alt="sent image" 
             className="rounded-lg max-w-full max-h-60 border border-zinc-300 dark:border-zinc-700 cursor-pointer hover:opacity-90 transition-opacity" 
-            onClick={() => handleImageClick(text)}
+            onClick={() => handleImageClick(text, undefined, 0)}
           />
         </div>
       );
     }
+
+    // Handle multiple images
+    if (type === 'multiple-images') {
+      try {
+        const imageUrls = typeof text === 'string' ? JSON.parse(text) : text;
+        if (Array.isArray(imageUrls)) {
+          return (
+            <div className="max-w-xs md:max-w-md">
+              <div className={cn(
+                "grid gap-1 rounded-lg overflow-hidden",
+                imageUrls.length === 1 && "grid-cols-1",
+                imageUrls.length === 2 && "grid-cols-2",
+                imageUrls.length === 3 && "grid-cols-2",
+                imageUrls.length === 4 && "grid-cols-2",
+                imageUrls.length >= 5 && "grid-cols-3"
+              )}>
+                {imageUrls.map((imageUrl: string, index: number) => (
+                  <div
+                    key={index}
+                    className={cn(
+                      "relative cursor-pointer group overflow-hidden",
+                      imageUrls.length === 3 && index === 2 && "col-span-2",
+                      imageUrls.length === 4 && "aspect-square",
+                      imageUrls.length >= 5 && "aspect-square"
+                    )}
+                    onClick={() => handleImageClick(imageUrl, imageUrls, index)}
+                  >
+                    <img
+                      src={imageUrl}
+                      alt={`Image ${index + 1}`}
+                      className="w-full h-full object-cover border border-zinc-300 dark:border-zinc-700 transition-transform duration-200 group-hover:scale-105"
+                    />
+                    {imageUrls.length > 4 && index === 4 && (
+                      <div className="absolute inset-0 bg-black/70 flex items-center justify-center">
+                        <span className="text-white font-bold text-xl">
+                          +{imageUrls.length - 4}
+                        </span>
+                      </div>
+                    )}
+                    {/* Hover overlay */}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors duration-200" />
+                    {/* Click indicator for multiple images */}
+                    {imageUrls.length > 1 && (
+                      <div className="absolute top-2 right-2 bg-black/70 text-white rounded-full p-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+                        <svg className="w-3 h-3" fill="currentColor" viewBox="0 0 20 20">
+                          <path fillRule="evenodd" d="M8 4a4 4 0 100 8 4 4 0 000-8zM2 8a6 6 0 1110.89 3.476l4.817 4.817a1 1 0 01-1.414 1.414l-4.816-4.816A6 6 0 012 8z" clipRule="evenodd" />
+                        </svg>
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+              <div className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+                <ImageIcon className="h-3 w-3" />
+                {imageUrls.length} image{imageUrls.length > 1 ? 's' : ''}
+                {imageUrls.length > 1 && (
+                  <span className="text-xs text-blue-500 ml-1">
+                    • Click to view • Use ← → keys or buttons to navigate
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        }
+      } catch (e) {
+        console.error('Error parsing multiple images:', e);
+      }
+    }
+
     if (type === 'pdf') {
       return (
         <div className="flex items-center gap-2 px-3 py-2 bg-zinc-100 dark:bg-zinc-800 rounded-xl border border-zinc-300 dark:border-zinc-700 max-w-xs md:max-w-md">
@@ -570,6 +876,8 @@ const Message: React.FC<MessageProps> = ({
         onClose={() => setIsImageModalOpen(false)}
         imageUrl={selectedImageUrl}
         altText="Chat Image"
+        imageUrls={selectedImageUrls}
+        currentIndex={selectedImageIndex}
       />
 
       <ConfirmationDialog

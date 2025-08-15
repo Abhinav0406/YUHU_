@@ -149,6 +149,42 @@ export const subscribeToFriendRequests = (callback: (request: { id: string; send
     .subscribe();
 };
 
+// Subscribe to real-time updates for profile changes (including deletions)
+export const subscribeToProfileChanges = (callback: (change: { event: 'INSERT' | 'UPDATE' | 'DELETE', old?: any, new?: any }) => void) => {
+  return supabase
+    .channel('realtime:profiles')
+    .on('postgres_changes', { 
+      event: '*', 
+      schema: 'public', 
+      table: 'profiles' 
+    }, (payload) => {
+      callback({
+        event: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
+        old: payload.old,
+        new: payload.new
+      });
+    })
+    .subscribe();
+};
+
+// Subscribe to real-time updates for friends table changes
+export const subscribeToFriendsChanges = (callback: (change: { event: 'INSERT' | 'UPDATE' | 'DELETE', old?: any, new?: any }) => void) => {
+  return supabase
+    .channel('realtime:friends')
+    .on('postgres_changes', { 
+      event: '*', 
+      schema: 'public', 
+      table: 'friends' 
+    }, (payload) => {
+      callback({
+        event: payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE',
+        old: payload.old,
+        new: payload.new
+      });
+    })
+    .subscribe();
+};
+
 // Fetch all users except the current user
 export async function fetchAllUsersExceptCurrent(currentUserEmail) {
   const { data, error } = await supabase
@@ -162,3 +198,85 @@ export async function fetchAllUsersExceptCurrent(currentUserEmail) {
 
   return data;
 }
+
+// Function to refresh friends list (useful for real-time updates)
+export const refreshFriendsList = async (userEmail: string) => {
+  try {
+    const friendsData = await getFriends(userEmail);
+    const friendEmails = friendsData.map(f => f.user1_email === userEmail ? f.user2_email : f.user1_email);
+    
+    if (friendEmails.length === 0) {
+      return [];
+    }
+
+    const { data: profiles, error } = await supabase
+      .from('profiles')
+      .select('id, username, email, avatar_url')
+      .in('email', friendEmails);
+
+    if (error) {
+      console.error('Error refreshing friends list:', error);
+      return [];
+    }
+
+    return profiles || [];
+  } catch (err) {
+    console.error('Error refreshing friends list:', err);
+    return [];
+  }
+};
+
+// Function to clean up orphaned friend records
+export const cleanupOrphanedFriends = async () => {
+  try {
+    // Get all friend records
+    const { data: friends, error: friendsError } = await supabase
+      .from('friends')
+      .select('*');
+
+    if (friendsError) {
+      throw new Error(`Failed to fetch friends: ${friendsError.message}`);
+    }
+
+    if (!friends || friends.length === 0) {
+      return { deleted: 0 };
+    }
+
+    // Get all existing profile emails
+    const { data: profiles, error: profilesError } = await supabase
+      .from('profiles')
+      .select('email');
+
+    if (profilesError) {
+      throw new Error(`Failed to fetch profiles: ${profilesError.message}`);
+    }
+
+    const existingEmails = new Set(profiles?.map(p => p.email) || []);
+
+    // Find orphaned friend records
+    const orphanedFriends = friends.filter(friend => 
+      !existingEmails.has(friend.user1_email) || !existingEmails.has(friend.user2_email)
+    );
+
+    if (orphanedFriends.length === 0) {
+      return { deleted: 0 };
+    }
+
+    // Delete orphaned records
+    const orphanedIds = orphanedFriends.map(f => f.id);
+    const { error: deleteError } = await supabase
+      .from('friends')
+      .delete()
+      .in('id', orphanedIds);
+
+    if (deleteError) {
+      throw new Error(`Failed to delete orphaned friends: ${deleteError.message}`);
+    }
+
+    console.log(`Cleaned up ${orphanedFriends.length} orphaned friend records`);
+    return { deleted: orphanedFriends.length };
+  } catch (err) {
+    console.error('Error cleaning up orphaned friends:', err);
+    throw err;
+  }
+};

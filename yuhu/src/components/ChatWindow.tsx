@@ -119,7 +119,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   };
 
   // Update handleSendMessage to include replyTo
-  const handleSendMessage = (msg: string | { type: string; content: string }) => {
+  const handleSendMessage = (msg: string | { type: string; content: string | string[] }) => {
     if (!activeChatId || !user) return;
 
     let payload: any = {};
@@ -132,7 +132,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         replyTo,
       };
     } else if (typeof msg === 'object' && msg.type && msg.content) {
-      // Only use object for non-text types
+      // Handle different message types
       if (msg.type === 'text') {
         payload = {
           chatId: activeChatId,
@@ -140,12 +140,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           text: msg.content,
           replyTo,
         };
-      } else {
+      } else if (msg.type === 'multiple-images') {
+        // For multiple images, send the array directly
         payload = {
           chatId: activeChatId,
           senderId: user.id,
-          text: JSON.stringify({ type: msg.type, content: msg.content }),
-          type: msg.type,
+          text: msg,
+          replyTo,
+        };
+      } else {
+        // For other types (image, pdf, audio, etc.)
+        payload = {
+          chatId: activeChatId,
+          senderId: user.id,
+          text: msg,
           replyTo,
         };
       }

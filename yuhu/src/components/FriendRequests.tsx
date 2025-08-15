@@ -62,6 +62,68 @@ const FriendRequests: React.FC<{ userEmail: string }> = ({ userEmail }) => {
     };
   }, [userEmail]);
 
+  // Add real-time subscriptions for profile and friends changes
+  useEffect(() => {
+    if (!userEmail) return;
+
+    // Subscribe to profile changes (including deletions)
+    const profileSubscription = subscribeToProfileChanges((change) => {
+      console.log('Profile change detected in FriendRequests:', change);
+      
+      if (change.event === 'DELETE') {
+        // Remove deleted user from users list
+        setUsers(prevUsers => 
+          prevUsers.filter(user => user.id !== change.old.id)
+        );
+        // Remove from requests if the deleted user had a pending request
+        setRequests(prevRequests => 
+          prevRequests.filter(request => 
+            request.sender_email !== change.old.email && 
+            request.receiver_email !== change.old.email
+          )
+        );
+      } else if (change.event === 'UPDATE') {
+        // Update user profile in users list
+        setUsers(prevUsers => 
+          prevUsers.map(user => 
+            user.id === change.new.id 
+              ? { ...user, ...change.new }
+              : user
+          )
+        );
+      }
+    });
+
+    // Subscribe to friends table changes
+    const friendsSubscription = subscribeToFriendsChanges((change) => {
+      console.log('Friends change detected in FriendRequests:', change);
+      
+      if (change.event === 'INSERT') {
+        // Refresh friends list when new friendship is added
+        const refreshFriends = async () => {
+          const friendsData = await getFriends(userEmail);
+          const friendEmails = friendsData.map(f => f.user1_email === userEmail ? f.user2_email : f.user1_email);
+          setFriends(friendEmails);
+        };
+        refreshFriends();
+      } else if (change.event === 'DELETE') {
+        // Refresh friends list when friendship is removed
+        const refreshFriends = async () => {
+          const friendsData = await getFriends(userEmail);
+          const friendEmails = friendsData.map(f => f.user1_email === userEmail ? f.user2_email : f.user1_email);
+          setFriends(friendEmails);
+        };
+        refreshFriends();
+      }
+    });
+
+    // Cleanup subscriptions
+    return () => {
+      profileSubscription.unsubscribe();
+      friendsSubscription.unsubscribe();
+    };
+  }, [userEmail]);
+
   const handleResponse = async (requestId: string, status: 'accepted' | 'rejected') => {
     await respondToFriendRequest(requestId, status);
     setRequests((prev) => prev.filter((req) => req.id !== requestId));

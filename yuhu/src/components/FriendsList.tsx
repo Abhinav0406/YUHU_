@@ -12,7 +12,7 @@ import {
 } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Search, UserPlus, Check, X } from 'lucide-react';
-import { getFriends, getPendingRequests, fetchAllUsersExceptCurrent, respondToFriendRequest } from '../services/friendService';
+import { getFriends, getPendingRequests, fetchAllUsersExceptCurrent, respondToFriendRequest, subscribeToProfileChanges, subscribeToFriendsChanges } from '../services/friendService';
 import { supabase } from '@/lib/supabase';
 
 const FriendsList: React.FC<{ userEmail: string; onStartChat: (friendEmail: string) => void }> = ({ userEmail, onStartChat }) => {
@@ -42,6 +42,73 @@ const FriendsList: React.FC<{ userEmail: string; onStartChat: (friendEmail: stri
       setLoading(false);
     };
     fetchData();
+  }, [userEmail]);
+
+  // Add real-time subscriptions for profile and friends changes
+  useEffect(() => {
+    if (!userEmail) return;
+
+    // Subscribe to profile changes (including deletions)
+    const profileSubscription = subscribeToProfileChanges((change) => {
+      console.log('Profile change detected in FriendsList:', change);
+      
+      if (change.event === 'DELETE') {
+        // Remove deleted user from friends list
+        setFriends(prevFriends => 
+          prevFriends.filter(friend => friend.id !== change.old.id)
+        );
+        // Also remove from suggestions if present
+        setSuggestions(prevSuggestions => 
+          prevSuggestions.filter(user => user.id !== change.old.id)
+        );
+      } else if (change.event === 'UPDATE') {
+        // Update user profile in friends list
+        setFriends(prevFriends => 
+          prevFriends.map(friend => 
+            friend.id === change.new.id 
+              ? { ...friend, ...change.new }
+              : friend
+          )
+        );
+        // Update in suggestions if present
+        setSuggestions(prevSuggestions => 
+          prevSuggestions.map(user => 
+            user.id === change.new.id 
+              ? { ...user, ...change.new }
+              : user
+          )
+        );
+      }
+    });
+
+    // Subscribe to friends table changes
+    const friendsSubscription = subscribeToFriendsChanges((change) => {
+      console.log('Friends change detected in FriendsList:', change);
+      
+      if (change.event === 'DELETE') {
+        // Refresh friends list when friendship is removed
+        const refreshFriends = async () => {
+          const friendsList = await getFriends(userEmail);
+          const friendEmails = friendsList.map(f => f.user1_email === userEmail ? f.user2_email : f.user1_email);
+          let profiles = [];
+          if (friendEmails.length > 0) {
+            const { data } = await supabase
+              .from('profiles')
+              .select('id, username, email, avatar_url')
+              .in('email', friendEmails);
+            profiles = data || [];
+          }
+          setFriends(profiles);
+        };
+        refreshFriends();
+      }
+    });
+
+    // Cleanup subscriptions
+    return () => {
+      profileSubscription.unsubscribe();
+      friendsSubscription.unsubscribe();
+    };
   }, [userEmail]);
 
   // Fetch pending requests

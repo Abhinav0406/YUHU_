@@ -282,22 +282,31 @@ export async function getMessages(chatId: string, userId: string): Promise<Messa
   return messages;
 }
 
-export async function sendMessage(chatId: string, senderId: string, text: string | { type: string; content: string; replyTo?: string }, replyTo?: string): Promise<Message | null> {
+export async function sendMessage(chatId: string, senderId: string, text: string | { type: string; content: string | string[]; replyTo?: string }, replyTo?: string): Promise<Message | null> {
   // Support for replyTo in text or as argument
-  let msgText = text;
+  let msgText: string = '';
   let msgType = 'text';
   let replyToId = replyTo;
+  
   if (typeof text === 'object') {
     msgType = text.type;
+    // Handle multiple images by converting array to JSON string
+    if (text.type === 'multiple-images' && Array.isArray(text.content)) {
+      msgText = JSON.stringify(text.content);
+    } else if (typeof text.content === 'string') {
     msgText = text.content;
+    }
     if (text.replyTo) replyToId = text.replyTo;
+  } else {
+    msgText = text;
   }
+
   const { data: message, error } = await supabase
     .from('messages')
     .insert({
       chat_id: chatId,
       sender_id: senderId,
-      text: typeof msgText === 'string' ? msgText : '',
+      text: msgText,
       type: msgType,
       status: 'sent',
       created_at: new Date().toISOString(),
