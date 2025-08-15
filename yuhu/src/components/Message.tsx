@@ -254,14 +254,14 @@ const ImageModal: React.FC<{
             </Button>
           </div>
 
-          {/* Navigation buttons */}
+          {/* Navigation buttons - hidden on mobile */}
           {hasMultipleImages && (
             <>
               <Button
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "absolute left-4 top-1/2 -translate-y-1/2 z-10 text-white hover:bg-white/20 hover:scale-110 transition-transform duration-200 bg-black/30 hover:bg-black/50",
+                  "absolute left-4 top-1/2 -translate-y-1/2 z-10 text-white hover:bg-white/20 hover:scale-110 transition-transform duration-200 bg-black/30 hover:bg-black/50 hidden md:flex",
                   currentImageIndex === 0 && "opacity-50 cursor-not-allowed"
                 )}
                 onClick={handlePrevious}
@@ -273,7 +273,7 @@ const ImageModal: React.FC<{
                 variant="ghost"
                 size="icon"
                 className={cn(
-                  "absolute right-4 top-1/2 -translate-y-1/2 z-10 text-white hover:bg-white/20 hover:scale-110 transition-transform duration-200 bg-black/30 hover:bg-black/50",
+                  "absolute right-4 top-1/2 -translate-y-1/2 z-10 text-white hover:bg-white/20 hover:scale-110 transition-transform duration-200 bg-black/30 hover:bg-black/50 hidden md:flex",
                   currentImageIndex === imageUrls.length - 1 && "opacity-50 cursor-not-allowed"
                 )}
                 onClick={handleNext}
@@ -287,7 +287,7 @@ const ImageModal: React.FC<{
           {/* Image counter and navigation hints */}
           {hasMultipleImages && (
             <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-10 text-center">
-              <div className="text-white bg-black/50 px-3 py-1 rounded-full text-sm mb-2">
+              <div className="text-white bg-black/50 px-3 py-1 rounded-full text-sm mb-2 text-center min-w-[3rem]">
                 {currentImageIndex + 1} / {imageUrls.length}
               </div>
               {/* Progress dots */}
@@ -296,7 +296,7 @@ const ImageModal: React.FC<{
                   <div
                     key={index}
                     className={cn(
-                      "relative w-2 h-2 rounded-full transition-all duration-200",
+                      "relative w-3 h-3 md:w-2 md:h-2 rounded-full transition-all duration-200",
                       index === currentImageIndex 
                         ? "bg-white scale-125" 
                         : "bg-white/50 hover:bg-white/70 cursor-pointer"
@@ -322,8 +322,8 @@ const ImageModal: React.FC<{
                       }
                     }}
                   >
-                    {/* Thumbnail preview */}
-                    <div className="thumbnail-preview absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 transition-opacity duration-200 pointer-events-none z-30">
+                    {/* Thumbnail preview - hidden on mobile */}
+                    <div className="thumbnail-preview absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 transition-opacity duration-200 pointer-events-none z-30 hidden md:block">
                       <img
                         src={url}
                         alt={`Preview ${index + 1}`}
@@ -333,11 +333,15 @@ const ImageModal: React.FC<{
                   </div>
                 ))}
               </div>
-              <div className="text-white/70 bg-black/30 px-2 py-1 rounded text-xs">
+              <div className="text-white/70 bg-black/30 px-2 py-1 rounded text-xs hidden md:block">
                 Use ← → keys, swipe, or click buttons to navigate
               </div>
-              <div className="text-white/50 bg-black/20 px-2 py-1 rounded text-xs mt-1">
+              <div className="text-white/50 bg-black/20 px-2 py-1 rounded text-xs mt-1 hidden md:block">
                 Home/End: First/Last • F: Fullscreen
+              </div>
+              {/* Mobile-friendly navigation hint */}
+              <div className="text-white/70 bg-black/30 px-2 py-1 rounded text-xs md:hidden">
+                Swipe left/right to navigate
               </div>
             </div>
           )}
@@ -652,7 +656,7 @@ const Message: React.FC<MessageProps> = ({
                 <ImageIcon className="h-3 w-3" />
                 {imageUrls.length} image{imageUrls.length > 1 ? 's' : ''}
                 {imageUrls.length > 1 && (
-                  <span className="text-xs text-blue-500 ml-1">
+                  <span className="text-xs text-blue-500 ml-1 hidden md:inline">
                     • Click to view • Use ← → keys or buttons to navigate
                   </span>
                 )}
