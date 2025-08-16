@@ -4,10 +4,12 @@ import Header from '../components/Header';
 import UserList from '../components/UserList';
 import { Input } from '@/components/ui/input';
 import { Search, X, RefreshCw } from 'lucide-react';
-import { getFriends, getPendingRequests, fetchAllUsersExceptCurrent, respondToFriendRequest, subscribeToProfileChanges, subscribeToFriendsChanges, refreshFriendsList } from '../services/friendService';
+import { getFriends, getPendingRequests, fetchAllUsersExceptCurrent, respondToFriendRequest, subscribeToProfileChanges, subscribeToFriendsChanges, refreshFriendsList, removeFriend } from '../services/friendService';
 import { supabase } from '@/lib/supabase';
 import { getOrCreateDirectChatByEmail } from '../services/chatService';
 import ChatWindow from '../components/ChatWindow';
+import { useToast } from '@/hooks/use-toast';
+import { ConfirmationDialog } from '@/components/ui/confirmation-dialog';
 
 const Chat = () => {
   const [selectedUser, setSelectedUser] = useState(null);
@@ -18,6 +20,10 @@ const Chat = () => {
   const [loading, setLoading] = useState(true);
   const [userEmail, setUserEmail] = useState('');
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [friendToDelete, setFriendToDelete] = useState(null);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+
+  const { toast } = useToast();
 
   // Handle browser back button
   useEffect(() => {
@@ -164,6 +170,46 @@ const Chat = () => {
     }
   };
 
+  // Handle friend deletion
+  const handleDeleteFriend = async (friend: any) => {
+    setFriendToDelete(friend);
+    setShowDeleteDialog(true);
+  };
+
+  // Confirm friend deletion
+  const confirmDeleteFriend = async () => {
+    if (!friendToDelete || !userEmail || !friendToDelete.email) return;
+    
+    try {
+      await removeFriend(userEmail, friendToDelete.email);
+      
+      // Remove the friend from the local state
+      setFriends(prevFriends => prevFriends.filter(f => f.id !== friendToDelete.id));
+      
+      // If the deleted friend was selected, clear the selection
+      if (selectedUser?.id === friendToDelete.id) {
+        setSelectedUser(null);
+        setSelectedChatId(null);
+      }
+      
+      // Show success message
+      toast({
+        title: "Friend removed",
+        description: `${friendToDelete.username || friendToDelete.email} has been removed from your friends list.`,
+      });
+    } catch (error) {
+      console.error('Error removing friend:', error);
+      toast({
+        title: "Error",
+        description: "Failed to remove friend. Please try again.",
+        variant: "destructive",
+      });
+    } finally {
+      setShowDeleteDialog(false);
+      setFriendToDelete(null);
+    }
+  };
+
   return (
     <div className="flex flex-col h-screen bg-zinc-900 text-zinc-100">
       <Header onSidebarToggle={() => setSidebarOpen(true)} />
@@ -195,7 +241,12 @@ const Chat = () => {
             {loading ? (
               <div className="text-zinc-400 text-center mt-8">Loading friends...</div>
             ) : (
-              <UserList users={filteredFriends} onUserSelect={handleUserSelect} />
+              <UserList 
+                users={filteredFriends} 
+                onUserSelect={handleUserSelect}
+                onUserDelete={handleDeleteFriend}
+                showDeleteButton={true}
+              />
             )}
           </div>
         </aside>
@@ -242,7 +293,12 @@ const Chat = () => {
                 {loading ? (
                   <div className="text-zinc-400 text-center mt-8">Loading friends...</div>
                 ) : (
-                  <UserList users={filteredFriends} onUserSelect={handleUserSelect} />
+                  <UserList 
+                    users={filteredFriends} 
+                    onUserSelect={handleUserSelect}
+                    onUserDelete={handleDeleteFriend}
+                    showDeleteButton={true}
+                  />
                 )}
               </div>
             </aside>
@@ -269,6 +325,20 @@ const Chat = () => {
           )}
         </section>
       </div>
+
+      {/* Confirmation Dialog for Friend Deletion */}
+      <ConfirmationDialog
+        isOpen={showDeleteDialog}
+        onClose={() => {
+          setShowDeleteDialog(false);
+          setFriendToDelete(null);
+        }}
+        onConfirm={confirmDeleteFriend}
+        title="Remove Friend"
+        description={`Are you sure you want to remove ${friendToDelete?.username || friendToDelete?.email} from your friends list? This action cannot be undone.`}
+        confirmText="Remove"
+        cancelText="Cancel"
+      />
     </div>
   );
 };

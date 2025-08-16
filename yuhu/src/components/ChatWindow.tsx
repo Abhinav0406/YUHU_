@@ -233,9 +233,17 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   useEffect(() => {
     if (!activeChatId || !user?.id) return;
 
+    console.log('🖊️ ChatWindow: Setting up typing subscription for:', {
+      activeChatId,
+      userId: user.id,
+      username: profile?.username
+    });
+
     const unsubscribe = subscribeToTyping(activeChatId, (users) => {
+      console.log('🖊️ ChatWindow: Received typing update:', users);
       // Filter out the current user from typing indicators
       const otherUsersTyping = users.filter(username => username !== profile?.username);
+      console.log('🖊️ ChatWindow: Other users typing:', otherUsersTyping);
       setTypingUsers(otherUsersTyping);
     });
 
@@ -974,6 +982,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               </div>
             </div>
           )}
+          {/* Debug info - remove this later */}
+          <div className="text-xs text-muted-foreground mt-2">
+            Debug: typingUsers = [{typingUsers.join(', ')}]
+          </div>
           <div ref={scrollRef} />
         </div>
       </ScrollArea>

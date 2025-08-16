@@ -56,12 +56,18 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
   // Initialize typing debouncer when chatId, userId, or username changes
   useEffect(() => {
+    console.log('🖊️ MessageInput: Initializing typing debouncer with:', { chatId, userId, username });
+    
     if (chatId && userId && username) {
+      console.log('🖊️ MessageInput: Creating typing debouncer');
       typingDebouncerRef.current = createTypingDebouncer(chatId, userId, username);
+    } else {
+      console.log('🖊️ MessageInput: Missing required props for typing debouncer');
     }
 
     return () => {
       if (typingDebouncerRef.current) {
+        console.log('🖊️ MessageInput: Cleaning up typing debouncer');
         typingDebouncerRef.current.cleanup();
       }
     };
@@ -131,9 +137,14 @@ const MessageInput: React.FC<MessageInputProps> = ({
     const newValue = e.target.value;
     setMessage(newValue);
     
+    console.log('🖊️ MessageInput: Input changed, value length:', newValue.length);
+    
     // Trigger typing indicator
     if (typingDebouncerRef.current && newValue.trim()) {
+      console.log('🖊️ MessageInput: Starting typing indicator');
       typingDebouncerRef.current.startTyping();
+    } else {
+      console.log('🖊️ MessageInput: No typing debouncer or empty value');
     }
   };
 

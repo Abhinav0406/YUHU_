@@ -52,6 +52,33 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [profile, setProfile] = useState<Profile | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Check database schema on initialization
+  useEffect(() => {
+    const checkDatabaseSchema = async () => {
+      try {
+        console.log('Checking database schema...');
+        const { data, error } = await supabase
+          .from('profiles')
+          .select('*')
+          .limit(1);
+        
+        if (error) {
+          console.error('Error checking profiles table:', error);
+        } else if (data && data.length > 0) {
+          const columns = Object.keys(data[0]);
+          console.log('Available columns in profiles table:', columns);
+          console.log('Sample profile data:', data[0]);
+        } else {
+          console.log('Profiles table is empty or has no data');
+        }
+      } catch (err) {
+        console.error('Error checking database schema:', err);
+      }
+    };
+    
+    checkDatabaseSchema();
+  }, []);
+
   // Subscribe to auth state changes when component mounts
   useEffect(() => {
     const fetchSession = async () => {
@@ -105,22 +132,57 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (error) {
           // If profile doesn't exist, create one
           if (error.code === 'PGRST116') {
+            console.log('Profile not found, creating new profile...');
+            
+            const profileData: any = {
+              id: session.user.id,
+              username: session.user.email?.split('@')[0] || 'user',
+              email: session.user.email || ''
+            };
+
+            // Check what columns are available and add them accordingly
+            try {
+              const { data: schemaCheck, error: schemaError } = await supabase
+                .from('profiles')
+                .select('*')
+                .limit(1);
+              
+              if (!schemaError && schemaCheck && schemaCheck.length > 0) {
+                const sampleRow = schemaCheck[0];
+                const availableColumns = Object.keys(sampleRow);
+                console.log('Available columns in profiles table:', availableColumns);
+                
+                // Add optional columns only if they exist
+                if (availableColumns.includes('full_name')) {
+                  profileData.full_name = session.user.email?.split('@')[0] || 'User';
+                }
+                if (availableColumns.includes('avatar_url')) {
+                  profileData.avatar_url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.user.email}`;
+                }
+                if (availableColumns.includes('status')) {
+                  profileData.status = 'online';
+                }
+                if (availableColumns.includes('created_at')) {
+                  profileData.created_at = new Date().toISOString();
+                }
+                if (availableColumns.includes('updated_at')) {
+                  profileData.updated_at = new Date().toISOString();
+                }
+              }
+            } catch (schemaCheckError) {
+              console.warn('Could not check schema, using minimal profile data:', schemaCheckError);
+            }
+
+            console.log('Creating profile with data:', profileData);
+
             const { data: newProfile, error: createError } = await supabase
               .from('profiles')
-              .insert({
-                id: session.user.id,
-                username: session.user.email?.split('@')[0] || 'user',
-                full_name: session.user.email?.split('@')[0] || 'User',
-                email: session.user.email || '',
-                avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${session.user.email}`,
-                status: 'online',
-                created_at: new Date().toISOString(),
-                updated_at: new Date().toISOString()
-              })
+              .insert(profileData)
               .select()
               .single();
 
             if (createError) {
+              console.error('Profile creation error:', createError);
               throw new AuthError(`Error creating profile: ${createError.message}`, createError.code);
             }
 
@@ -128,13 +190,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               setProfile({
                 id: newProfile.id,
                 username: newProfile.username,
-                fullName: newProfile.full_name,
+                fullName: newProfile.full_name || newProfile.username,
                 email: newProfile.email,
-                avatar: newProfile.avatar_url,
-                status: newProfile.status,
-                bio: newProfile.bio,
-                college: newProfile.college,
-                major: newProfile.major
+                avatar: newProfile.avatar_url || null,
+                status: newProfile.status || 'online',
+                bio: newProfile.bio || null,
+                college: newProfile.college || null,
+                major: newProfile.major || null
               });
             }
           } else {
@@ -205,6 +267,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setLoading(true);
     let createdUserId: string | null = null;
     try {
+      console.log('Starting registration process...');
+      
       // Create the user first
       const { data, error } = await supabase.auth.signUp({ 
         email, 
@@ -217,6 +281,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
+        console.error('Supabase auth error:', error);
         if (error.message && error.message.toLowerCase().includes('email')) {
           throw new AuthError('Email already registered', 'EMAIL_EXISTS');
         }
@@ -224,9 +289,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (!data.user) {
-        throw new AuthError('Registration failed');
+        throw new AuthError('Registration failed - no user data returned');
       }
       createdUserId = data.user.id;
+      console.log('User created with ID:', createdUserId);
 
       // Now check if username is already taken (should be unique in profiles)
       const { data: existingUsers, error: checkError } = await supabase
@@ -236,6 +302,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .limit(1);
 
       if (checkError) {
+        console.error('Error checking username:', checkError);
         throw new AuthError(`Error checking username: ${checkError.message}`, checkError.code);
       }
 
@@ -243,25 +310,61 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         throw new AuthError('Username already taken', 'USERNAME_EXISTS');
       }
 
-      // Create profile record
+      // Create profile record with only essential columns
+      const profileData: any = {
+        id: createdUserId,
+        username: username,
+        email: email
+      };
+
+      // Only add columns if they exist (we'll check the schema first)
+      try {
+        const { data: schemaCheck, error: schemaError } = await supabase
+          .from('profiles')
+          .select('*')
+          .limit(1);
+        
+        if (!schemaError && schemaCheck && schemaCheck.length > 0) {
+          const sampleRow = schemaCheck[0];
+          const availableColumns = Object.keys(sampleRow);
+          console.log('Available columns in profiles table:', availableColumns);
+          
+          // Add optional columns only if they exist
+          if (availableColumns.includes('full_name')) {
+            profileData.full_name = username.charAt(0).toUpperCase() + username.slice(1);
+          }
+          if (availableColumns.includes('avatar_url')) {
+            profileData.avatar_url = `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`;
+          }
+          if (availableColumns.includes('status')) {
+            profileData.status = 'online';
+          }
+          if (availableColumns.includes('created_at')) {
+            profileData.created_at = new Date().toISOString();
+          }
+          if (availableColumns.includes('updated_at')) {
+            profileData.updated_at = new Date().toISOString();
+          }
+        }
+      } catch (schemaCheckError) {
+        console.warn('Could not check schema, using minimal profile data:', schemaCheckError);
+      }
+
+      console.log('Creating profile with data:', profileData);
+
       const { error: profileError } = await supabase
         .from('profiles')
-        .insert({
-          id: createdUserId,
-          username: username,
-          full_name: username.charAt(0).toUpperCase() + username.slice(1),
-          email: email,
-          avatar_url: `https://api.dicebear.com/7.x/avataaars/svg?seed=${email}`,
-          status: 'online',
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        });
+        .insert(profileData);
 
       if (profileError) {
+        console.error('Profile creation error:', profileError);
         throw new AuthError(`Error creating profile: ${profileError.message}`, profileError.code);
       }
+      
+      console.log('Profile created successfully');
       return true;
     } catch (error) {
+      console.error('Registration error:', error);
       if (error instanceof AuthError) {
         throw error;
       }

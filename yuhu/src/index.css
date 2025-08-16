@@ -98,6 +98,15 @@
     @apply relative;
   }
 
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+  
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
+  }
+
   .chat-bubble-sent {
     @apply bg-gradient-to-r from-blue-900 to-purple-900 text-white shadow-lg;
   }

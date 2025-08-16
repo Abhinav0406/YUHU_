@@ -10,6 +10,8 @@ import Profile from "./pages/Profile";
 import NotFound from "./pages/NotFound";
 import ProtectedRoute from "./components/ProtectedRoute";
 import CallHistory from "./pages/CallHistory";
+import Friends from "./pages/Friends";
+import FriendRequests from "./pages/FriendRequests";
 import NotificationSettings from "./components/NotificationSettings";
 import TestNotifications from "./pages/TestNotifications";
 import TestWebRTC from "./pages/TestWebRTC";
@@ -37,6 +39,9 @@ const App = () => (
             <Route path="/chat" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
             <Route path="/chat/:chatId" element={<ProtectedRoute><Chat /></ProtectedRoute>} />
             <Route path="/profile" element={<Profile />} />
+            <Route path="/profile/:userId" element={<Profile />} />
+            <Route path="/friends-list" element={<ProtectedRoute><Friends /></ProtectedRoute>} />
+            <Route path="/friend-requests" element={<ProtectedRoute><FriendRequests /></ProtectedRoute>} />
             <Route path="/call-history" element={<ProtectedRoute><CallHistory /></ProtectedRoute>} />
             <Route path="/notifications" element={<ProtectedRoute><NotificationSettings /></ProtectedRoute>} />
             <Route path="/test-notifications" element={<ProtectedRoute><TestNotifications /></ProtectedRoute>} />

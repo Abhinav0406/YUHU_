@@ -18,10 +18,12 @@ export async function sendTypingStatus(
   isTyping: boolean
 ): Promise<boolean> {
   try {
+    console.log('🖊️ Sending typing status:', { chatId, userId, username, isTyping });
+    
     // Use Supabase real-time to broadcast typing status
     const channel = supabase.channel(`typing:${chatId}`);
     
-    await channel.send({
+    const result = await channel.send({
       type: 'broadcast',
       event: 'typing',
       payload: {
@@ -33,9 +35,10 @@ export async function sendTypingStatus(
       }
     });
 
+    console.log('🖊️ Typing status sent successfully:', result);
     return true;
   } catch (error) {
-    console.error('Error sending typing status:', error);
+    console.error('❌ Error sending typing status:', error);
     return false;
   }
 }
@@ -47,6 +50,7 @@ export function subscribeToTyping(
   chatId: string,
   onTypingUpdate: (typingUsers: string[]) => void
 ) {
+  console.log('🖊️ Setting up typing subscription for chat:', chatId);
   const channel = supabase.channel(`typing:${chatId}`);
   
   const typingUsers = new Set<string>();
