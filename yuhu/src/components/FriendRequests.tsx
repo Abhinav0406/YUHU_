@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getPendingRequests, respondToFriendRequest, subscribeToFriendRequests, sendFriendRequest, getFriends } from '../services/friendService';
+import { getPendingRequests, respondToFriendRequest, subscribeToFriendRequests, sendFriendRequest, getFriends, subscribeToProfileChanges, subscribeToFriendsChanges } from '../services/friendService';
 import { supabase } from '@/lib/supabase';
 import { UserCircle2, UserPlus, Loader2 } from 'lucide-react';
 
