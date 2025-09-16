@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { getPendingRequests, respondToFriendRequest, subscribeToFriendRequests, sendFriendRequest, getFriends, subscribeToProfileChanges, subscribeToFriendsChanges } from '../services/friendService';
+import { notificationService } from '../services/notificationService';
 import { supabase } from '@/lib/supabase';
 import { UserCircle2, UserPlus, Loader2 } from 'lucide-react';
 
@@ -52,9 +53,16 @@ const FriendRequests: React.FC<{ userEmail: string }> = ({ userEmail }) => {
       console.log('DEBUG: pendingRequests', pendingRequests);
     };
     fetchData();
-    const subscription = subscribeToFriendRequests((newRequest) => {
+    const subscription = subscribeToFriendRequests(async (newRequest) => {
       if (newRequest.receiver_email === userEmail) {
         setRequests((prev) => [...prev, newRequest]);
+        
+        // Show notification for new friend request
+        try {
+          await notificationService.showFriendRequestNotification(newRequest.sender_email);
+        } catch (error) {
+          console.error('Error showing friend request notification:', error);
+        }
       }
     });
     return () => {

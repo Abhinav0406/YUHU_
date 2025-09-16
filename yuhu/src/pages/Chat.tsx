@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import Layout from '../components/Layout';
 import Header from '../components/Header';
 import UserList from '../components/UserList';
+import NotificationPermission from '../components/NotificationPermission';
 import { Input } from '@/components/ui/input';
 import { Search, X, RefreshCw } from 'lucide-react';
 import { getFriends, getPendingRequests, fetchAllUsersExceptCurrent, respondToFriendRequest, subscribeToProfileChanges, subscribeToFriendsChanges, refreshFriendsList, removeFriend } from '../services/friendService';
@@ -235,6 +236,10 @@ const Chat = () => {
               >
                 <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
               </button>
+            </div>
+            {/* Notification Permission Component */}
+            <div className="px-2">
+              <NotificationPermission />
             </div>
           </div>
           <div className="flex-1 overflow-y-auto custom-scrollbar px-2 py-2">

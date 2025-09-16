@@ -1,481 +1,169 @@
-import { toast } from '@/components/ui/sonner';
-import { createNotificationSound } from '@/lib/createNotificationSound';
+// Notification Service for PWA
+export class NotificationService {
+  private static instance: NotificationService;
+  private permission: NotificationPermission = 'default';
 
-export interface NotificationPreferences {
-  browserNotifications: boolean;
-  inAppNotifications: boolean;
-  soundNotifications: boolean;
-  messageNotifications: boolean;
-  callNotifications: boolean;
-  friendRequestNotifications: boolean;
-}
-
-export interface NotificationData {
-  title: string;
-  message: string;
-  type: 'message' | 'call' | 'friend_request' | 'system';
-  icon?: string;
-  data?: any;
-  clickAction?: () => void;
-}
-
-class NotificationService {
-  private audio: HTMLAudioElement | null = null;
-  private preferences: NotificationPreferences = {
-    browserNotifications: true,
-    inAppNotifications: true,
-    soundNotifications: true,
-    messageNotifications: true,
-    callNotifications: true,
-    friendRequestNotifications: true,
-  };
-  private notificationQueue: NotificationData[] = [];
-  private isProcessingQueue = false;
-  private debugMode = true; // Enable debug logging
-
-  constructor() {
-    this.loadPreferences();
-    this.initializeAudio();
-    this.startHealthCheck();
+  private constructor() {
+    this.checkPermission();
   }
 
-  private log(message: string, data?: any) {
-    if (this.debugMode) {
-      console.log(`🔔 [NotificationService] ${message}`, data || '');
+  public static getInstance(): NotificationService {
+    if (!NotificationService.instance) {
+      NotificationService.instance = new NotificationService();
+    }
+    return NotificationService.instance;
+  }
+
+  private async checkPermission(): Promise<void> {
+    if ('Notification' in window) {
+      this.permission = Notification.permission;
     }
   }
 
-  private logError(message: string, error?: any) {
-    if (this.debugMode) {
-      console.error(`🔔 [NotificationService] ERROR: ${message}`, error || '');
-    }
-  }
-
-  private loadPreferences() {
-    try {
-      const saved = localStorage.getItem('notificationPreferences');
-      if (saved) {
-        this.preferences = { ...this.preferences, ...JSON.parse(saved) };
-        this.log('Preferences loaded:', this.preferences);
-      }
-    } catch (error) {
-      this.logError('Failed to load preferences:', error);
-    }
-  }
-
-  private savePreferences() {
-    try {
-      localStorage.setItem('notificationPreferences', JSON.stringify(this.preferences));
-      this.log('Preferences saved');
-    } catch (error) {
-      this.logError('Failed to save preferences:', error);
-    }
-  }
-
-  private initializeAudio() {
-    try {
-      this.audio = new Audio('/assets/call-notification.mp3');
-      this.audio.preload = 'auto';
-      this.audio.volume = 0.3;
-      
-      this.audio.addEventListener('canplaythrough', () => {
-        this.log('Audio file loaded successfully');
-      });
-      
-      this.audio.addEventListener('error', (e) => {
-        this.logError('Audio file error:', e);
-        this.audio = null;
-      });
-    } catch (error) {
-      this.logError('Failed to initialize audio:', error);
-      this.audio = null;
-    }
-  }
-
-  private startHealthCheck() {
-    // Check notification status every 30 seconds
-    setInterval(() => {
-      this.checkNotificationHealth();
-    }, 30000);
-  }
-
-  private async checkNotificationHealth() {
-    const status = {
-      permission: Notification.permission,
-      supported: 'Notification' in window,
-      preferences: this.preferences,
-      audioReady: this.audio?.readyState >= 2,
-      queueLength: this.notificationQueue.length,
-    };
-    
-    this.log('Health check:', status);
-    
-    // Auto-request permission if not granted
-    if (Notification.permission === 'default') {
-      this.log('Requesting notification permission...');
-      await this.requestPermission();
-    }
-  }
-
-  async requestPermission(): Promise<boolean> {
+  public async requestPermission(): Promise<boolean> {
     if (!('Notification' in window)) {
-      this.logError('Browser does not support notifications');
+      console.log('This browser does not support notifications');
+      return false;
+    }
+
+    if (this.permission === 'granted') {
+      return true;
+    }
+
+    if (this.permission === 'denied') {
+      console.log('Notification permission denied');
       return false;
     }
 
     try {
-      if (Notification.permission === 'default') {
-        this.log('Requesting permission...');
-        const permission = await Notification.requestPermission();
-        this.log('Permission result:', permission);
-        return permission === 'granted';
-      }
-
-      const result = Notification.permission === 'granted';
-      this.log('Permission status:', result);
-      return result;
+      const permission = await Notification.requestPermission();
+      this.permission = permission;
+      return permission === 'granted';
     } catch (error) {
-      this.logError('Error requesting permission:', error);
+      console.error('Error requesting notification permission:', error);
       return false;
     }
   }
 
-  async showNotification(data: NotificationData): Promise<void> {
-    this.log('Received notification request:', data);
-    
-    // Add to queue to prevent blocking
-    this.notificationQueue.push(data);
-    
-    if (!this.isProcessingQueue) {
-      this.processNotificationQueue();
-    }
-  }
-
-  private async processNotificationQueue() {
-    if (this.isProcessingQueue || this.notificationQueue.length === 0) {
-      return;
-    }
-
-    this.isProcessingQueue = true;
-    
-    while (this.notificationQueue.length > 0) {
-      const data = this.notificationQueue.shift();
-      if (data) {
-        await this.processSingleNotification(data);
-        // Small delay between notifications
-        await new Promise(resolve => setTimeout(resolve, 100));
-      }
-    }
-    
-    this.isProcessingQueue = false;
-  }
-
-  private async processSingleNotification(data: NotificationData) {
-    const { title, message, type, icon, data: notificationData, clickAction } = data;
-
-    this.log('Processing notification:', { title, message, type });
-
-    // Check if notifications are enabled for this type
-    if (!this.shouldShowNotification(type)) {
-      this.log('Notification blocked by preferences for type:', type);
-      return;
-    }
-
-    try {
-      // Show in-app toast notification
-      if (this.preferences.inAppNotifications) {
-        this.log('Showing in-app notification');
-        this.showInAppNotification(title, message, type);
-      }
-
-      // Show browser notification
-      if (this.preferences.browserNotifications && type !== 'system') {
-        this.log('Showing browser notification');
-        await this.showBrowserNotification(title, message, icon, notificationData, clickAction);
-      }
-
-      // Play sound notification
-      if (this.preferences.soundNotifications) {
-        this.log('Playing notification sound');
-        this.playNotificationSound(type);
-      }
-    } catch (error) {
-      this.logError('Error processing notification:', error);
-    }
-  }
-
-  private shouldShowNotification(type: string): boolean {
-    const shouldShow = this.preferences[`${type}Notifications` as keyof NotificationPreferences] ?? true;
-    this.log(`Should show ${type} notification:`, shouldShow);
-    return shouldShow;
-  }
-
-  private showInAppNotification(title: string, message: string, type: string) {
-    const icon = this.getNotificationIcon(type);
-    this.log('Showing in-app toast:', { message, title, icon, type });
-    
-    try {
-      toast(message, {
-        description: title,
-        icon: icon,
-        duration: 5000,
-        action: {
-          label: 'View',
-          onClick: () => {
-            this.log('In-app notification clicked');
-          },
-        },
-      });
-      this.log('Toast displayed successfully');
-    } catch (error) {
-      this.logError('Error showing toast:', error);
-    }
-  }
-
-  private async showBrowserNotification(
-    title: string,
-    message: string,
-    icon?: string,
-    data?: any,
-    clickAction?: () => void
-  ) {
-    if (!('Notification' in window)) {
-      this.log('Notifications not supported');
-      return;
-    }
-
-    if (Notification.permission !== 'granted') {
-      this.log('Notification permission not granted');
+  public async showNotification(title: string, options: NotificationOptions = {}): Promise<void> {
+    if (this.permission !== 'granted') {
+      console.log('Notification permission not granted');
       return;
     }
 
     try {
       const notification = new Notification(title, {
-        body: message,
-        icon: icon || '/chat-icon.png',
-        badge: '/chat-icon.png',
-        tag: 'yuhu-notification',
-        data: data,
-        requireInteraction: false,
-        silent: false,
+        icon: '/favicon.ico',
+        badge: '/favicon.ico',
+        ...options
       });
 
-      this.log('Browser notification created:', notification);
-
-      if (clickAction) {
-        notification.onclick = () => {
-          this.log('Browser notification clicked');
-          clickAction();
-          notification.close();
-        };
-      }
-
-      // Auto-close after 5 seconds
+      // Auto-close notification after 5 seconds
       setTimeout(() => {
         notification.close();
       }, 5000);
+
+      // Handle notification click
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+      };
     } catch (error) {
-      this.logError('Error creating browser notification:', error);
+      console.error('Error showing notification:', error);
     }
   }
 
-  private playNotificationSound(type: string) {
-    if (!this.preferences.soundNotifications) {
-      this.log('Sound notifications disabled');
-      return;
-    }
-
-    try {
-      // Try to use the audio file first
-      if (this.audio && this.audio.readyState >= 2) {
-        this.log('Playing audio file');
-        this.audio.currentTime = 0;
-        this.audio.play().catch((error) => {
-          this.logError('Audio file play failed, using fallback:', error);
-          // Fallback to programmatic sound
-          createNotificationSound(type as any);
-        });
-      } else {
-        this.log('Audio not ready, using programmatic sound');
-        // Use the programmatic fallback sound system
-        createNotificationSound(type as any);
-      }
-    } catch (error) {
-      this.logError('Failed to play notification sound:', error);
-      // Try programmatic fallback as last resort
-      try {
-        createNotificationSound(type as any);
-      } catch (fallbackError) {
-        this.logError('Fallback sound also failed:', fallbackError);
-      }
-    }
-  }
-
-  private getNotificationIcon(type: string): string {
-    switch (type) {
-      case 'call':
-        return '📞';
-      case 'message':
-        return '💬';
-      case 'friend_request':
-        return '👥';
-      case 'system':
-        return '🔔';
-      default:
-        return '📢';
-    }
-  }
-
-  // Enhanced notification methods with better error handling
-  async showMessageNotification(senderName: string, message: string, chatId: string, senderAvatar?: string) {
-    this.log('Showing message notification:', { senderName, message: message.substring(0, 50), chatId });
-    
-    await this.showNotification({
-      title: `New message from ${senderName}`,
-      message: message.length > 50 ? `${message.substring(0, 50)}...` : message,
-      type: 'message',
-      icon: senderAvatar || '/chat-icon.png',
-      data: { chatId, senderName },
-      clickAction: () => {
-        this.log('Message notification clicked, navigating to chat:', chatId);
-        // Navigate to chat
-        window.location.href = `/chat/${chatId}`;
-      },
+  public async showChatNotification(senderName: string, message: string, chatId?: string): Promise<void> {
+    await this.showNotification(`New message from ${senderName}`, {
+      body: message,
+      tag: `chat-${chatId || 'unknown'}`,
+      requireInteraction: true,
+      actions: [
+        {
+          action: 'open',
+          title: 'Open Chat'
+        },
+        {
+          action: 'dismiss',
+          title: 'Dismiss'
+        }
+      ]
     });
   }
 
-  async showCallNotification(callerName: string, isIncoming: boolean, chatId: string, callerAvatar?: string) {
-    const title = isIncoming ? `Incoming call from ${callerName}` : `Calling ${callerName}`;
-    const message = isIncoming ? 'Tap to answer' : 'Connecting...';
-    
-    this.log('Showing call notification:', { callerName, isIncoming, chatId });
-    
-    await this.showNotification({
-      title,
-      message,
-      type: 'call',
-      icon: callerAvatar || '/chat-icon.png',
-      data: { chatId, callerName, isIncoming },
-      clickAction: () => {
-        this.log('Call notification clicked, navigating to chat:', chatId);
-        // Navigate to chat with call modal
-        window.location.href = `/chat/${chatId}?call=incoming`;
-      },
+  public async showMessageNotification(senderName: string, message: string, chatId?: string, senderAvatar?: string): Promise<void> {
+    await this.showNotification(`New message from ${senderName}`, {
+      body: message,
+      icon: senderAvatar || '/favicon.ico',
+      tag: `message-${chatId || 'unknown'}`,
+      requireInteraction: false,
+      actions: [
+        {
+          action: 'open',
+          title: 'Open Chat'
+        }
+      ]
     });
   }
 
-  async showFriendRequestNotification(requesterName: string, requesterAvatar?: string) {
-    this.log('Showing friend request notification:', { requesterName });
-    
-    await this.showNotification({
-      title: `Friend request from ${requesterName}`,
-      message: 'Tap to view and respond',
-      type: 'friend_request',
-      icon: requesterAvatar || '/chat-icon.png',
-      data: { requesterName },
-      clickAction: () => {
-        this.log('Friend request notification clicked');
-        // Navigate to friend requests page
-        window.location.href = '/friends/requests';
-      },
+  public async showFriendRequestNotification(senderName: string): Promise<void> {
+    await this.showNotification(`Friend request from ${senderName}`, {
+      body: 'Tap to view friend request',
+      tag: 'friend-request',
+      requireInteraction: true,
+      actions: [
+        {
+          action: 'open',
+          title: 'View Request'
+        }
+      ]
     });
   }
 
-  async showSystemNotification(title: string, message: string) {
-    this.log('Showing system notification:', { title, message });
-    
-    await this.showNotification({
-      title,
-      message,
-      type: 'system',
+  public async showCallNotification(callerName: string, isVideo: boolean = false): Promise<void> {
+    const callType = isVideo ? 'video call' : 'voice call';
+    await this.showNotification(`Incoming ${callType} from ${callerName}`, {
+      body: 'Tap to answer',
+      tag: 'incoming-call',
+      requireInteraction: true,
+      actions: [
+        {
+          action: 'answer',
+          title: 'Answer'
+        },
+        {
+          action: 'decline',
+          title: 'Decline'
+        }
+      ]
     });
   }
 
-  // Test notification method
-  async testNotification() {
-    this.log('Testing notification system...');
-    
-    await this.showNotification({
-      title: 'Test Notification',
-      message: 'This is a test notification to verify the system is working',
-      type: 'system',
-      clickAction: () => {
-        this.log('Test notification clicked');
-      },
-    });
+  public isSupported(): boolean {
+    return 'Notification' in window;
   }
 
-  // Preference management
-  updatePreferences(newPreferences: Partial<NotificationPreferences>) {
-    this.preferences = { ...this.preferences, ...newPreferences };
-    this.savePreferences();
-    this.log('Preferences updated:', this.preferences);
+  public getPermission(): NotificationPermission {
+    return this.permission;
   }
 
-  getPreferences(): NotificationPreferences {
-    return { ...this.preferences };
-  }
-
-  // Utility methods
-  isSupported(): boolean {
-    const supported = 'Notification' in window;
-    this.log('Notifications supported:', supported);
-    return supported;
-  }
-
-  getPermissionStatus(): NotificationPermission {
-    const status = Notification.permission;
-    this.log('Permission status:', status);
-    return status;
-  }
-
-  // Debug methods
-  enableDebugMode() {
-    this.debugMode = true;
-    this.log('Debug mode enabled');
-  }
-
-  disableDebugMode() {
-    this.debugMode = false;
-    console.log('🔔 [NotificationService] Debug mode disabled');
-  }
-
-  getStatus() {
+  public getPreferences(): { permission: NotificationPermission; supported: boolean } {
     return {
-      permission: Notification.permission,
-      supported: 'Notification' in window,
-      preferences: this.preferences,
-      audioReady: this.audio?.readyState >= 2,
-      queueLength: this.notificationQueue.length,
-      isProcessingQueue: this.isProcessingQueue,
+      permission: this.permission,
+      supported: this.isSupported()
     };
   }
 
-  // Clear all notifications
-  clearAllNotifications() {
-    this.log('Clearing all notifications');
-    this.notificationQueue = [];
-    if ('Notification' in window) {
-      // Close all notifications (this is a workaround as there's no direct API)
-      // The notifications will auto-close after 5 seconds anyway
+  public async clearAllNotifications(): Promise<void> {
+    if ('serviceWorker' in navigator && 'getRegistrations' in navigator.serviceWorker) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      for (const registration of registrations) {
+        const notifications = await registration.getNotifications();
+        notifications.forEach(notification => notification.close());
+      }
     }
   }
 }
 
-// Create singleton instance
-export const notificationService = new NotificationService();
-
-// Export convenience functions
-export const showMessageNotification = (senderName: string, message: string, chatId: string, senderAvatar?: string) =>
-  notificationService.showMessageNotification(senderName, message, chatId, senderAvatar);
-
-export const showCallNotification = (callerName: string, isIncoming: boolean, chatId: string, callerAvatar?: string) =>
-  notificationService.showCallNotification(callerName, isIncoming, chatId, callerAvatar);
-
-export const showFriendRequestNotification = (requesterName: string, requesterAvatar?: string) =>
-  notificationService.showFriendRequestNotification(requesterName, requesterAvatar);
-
-export const showSystemNotification = (title: string, message: string) =>
-  notificationService.showSystemNotification(title, message);
-
-export default notificationService; 
+// Export singleton instance
+export const notificationService = NotificationService.getInstance();
