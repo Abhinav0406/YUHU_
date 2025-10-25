@@ -1,22 +1,29 @@
 
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useAuth } from '@/context/AuthContext';
 import { Loader2 } from 'lucide-react';
 import Header from './Header';
+import FooterNavigation from './FooterNavigation';
 
 interface LayoutProps {
   children: React.ReactNode;
   requireAuth?: boolean;
   showHeader?: boolean;
+  hideFooter?: boolean;
 }
 
 const Layout: React.FC<LayoutProps> = ({ 
   children, 
   requireAuth = false,
-  showHeader = true 
+  showHeader = true,
+  hideFooter = false
 }) => {
   const { isAuthenticated, loading } = useAuth();
   const navigate = useNavigate();
+  const location = useLocation();
+  
+  // Don't show header on chat page since it has its own header
+  const isChatPage = location.pathname.startsWith('/chat');
 
   // Redirect to login if the page requires authentication and user is not authenticated
   if (requireAuth && !loading && !isAuthenticated) {
@@ -40,8 +47,9 @@ const Layout: React.FC<LayoutProps> = ({
 
   return (
     <div className="min-h-screen flex flex-col bg-gray-50">
-      {showHeader && <Header />}
-      <main className="flex-1">{children}</main>
+      {showHeader && !isChatPage && <Header />}
+      <main className="flex-1 pb-16 md:pb-0">{children}</main>
+      {!hideFooter && <FooterNavigation />}
     </div>
   );
 };

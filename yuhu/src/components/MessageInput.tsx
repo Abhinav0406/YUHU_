@@ -2,7 +2,8 @@ import { useState, useRef, useEffect } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/lib/utils';
-import { Send, Paperclip, Smile, Loader2, Mic, Square, X, Image as ImageIcon, Trash2 } from 'lucide-react';
+import { Send, Paperclip, Smile, Loader2, Mic, Square, X, Trash2 } from 'lucide-react';
+import EmojiPicker from './EmojiPicker';
 import { supabase } from '@/lib/supabase';
 import { toast } from '@/components/ui/use-toast';
 import { createTypingDebouncer } from '@/services/typingService';
@@ -153,6 +154,21 @@ const MessageInput: React.FC<MessageInputProps> = ({
     if (typingDebouncerRef.current && message.trim()) {
       typingDebouncerRef.current.startTyping();
     }
+  };
+
+  const handleEmojiSelect = (emoji: string) => {
+    const newMessage = message + emoji;
+    setMessage(newMessage);
+    
+    // Trigger typing indicator
+    if (typingDebouncerRef.current && newMessage.trim()) {
+      typingDebouncerRef.current.startTyping();
+    }
+    
+    // Focus back to textarea
+    setTimeout(() => {
+      textareaRef.current?.focus();
+    }, 100);
   };
 
   const handleSendMessage = () => {
@@ -449,13 +465,13 @@ const MessageInput: React.FC<MessageInputProps> = ({
   }, []);
 
   return (
-    <form onSubmit={handleFormSubmit} className="border-t p-3 bg-background">
+    <form onSubmit={handleFormSubmit} className="border-t border-zinc-700 p-2 bg-zinc-900/95 backdrop-blur-sm">
       {replyToMessage && (
-        <div className="mb-2 p-2 bg-muted rounded flex items-center justify-between">
-          <div className="text-xs text-muted-foreground truncate max-w-xs">
-            Replying to: <span className="font-semibold">{replyToMessage.sender?.name || 'Message'}</span>: {replyToMessage.text || replyToMessage.content}
+        <div className="mb-2 p-2 bg-zinc-800 rounded-lg flex items-center justify-between fs">
+          <div className="text-xs text-zinc-300 truncate max-w-xs">
+            Replying to: <span className="font-semibold text-white">{replyToMessage.sender?.name || 'Message'}</span>: {replyToMessage.text || replyToMessage.content}
           </div>
-          <Button type="button" size="icon" variant="ghost" onClick={onCancelReply}>
+          <Button type="button" size="icon" variant="ghost" onClick={onCancelReply} className="h-8 w-8 touch-target text-zinc-400 hover:text-white">
             <X className="h-4 w-4" />
           </Button>
         </div>
@@ -463,40 +479,41 @@ const MessageInput: React.FC<MessageInputProps> = ({
       
       {/* Selected Files Preview */}
       {selectedFiles.length > 0 && (
-        <div className="mb-3 p-3 bg-muted rounded-lg">
+        <div className="mb-3 p-3 bg-zinc-800 rounded-lg">
           <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium text-muted-foreground">
-              {selectedFiles.length} image{selectedFiles.length > 1 ? 's' : ''} selected
+            <span className="text-sm font-medium text-zinc-300">
+              {selectedFiles.length} file{selectedFiles.length > 1 ? 's' : ''} selected
             </span>
             <Button
               type="button"
               variant="ghost"
               size="sm"
               onClick={() => setSelectedFiles([])}
-              className="text-xs"
+              className="text-xs text-zinc-400 hover:text-white"
             >
               Clear all
             </Button>
           </div>
-          <div className="grid grid-cols-3 gap-2 max-h-32 overflow-y-auto">
+          <div className="grid grid-cols-1 gap-2 max-h-32 overflow-y-auto">
             {selectedFiles.map((file) => (
-              <div key={file.id} className="relative group">
-                <img
-                  src={file.preview}
-                  alt="Preview"
-                  className="w-full h-20 object-cover rounded border"
-                />
-                <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity rounded flex items-center justify-center">
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => removeFile(file.id)}
-                    className="h-6 w-6 text-white hover:bg-white/20"
-                  >
-                    <Trash2 className="h-3 w-3" />
-                  </Button>
+              <div key={file.id} className="relative group flex items-center p-2 bg-zinc-700 rounded border">
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-medium text-white truncate">
+                    {file.file.name}
+                  </div>
+                  <div className="text-xs text-zinc-400">
+                    {file.file.size ? `${(file.file.size / 1024 / 1024).toFixed(1)} MB` : 'Unknown size'}
+                  </div>
                 </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon"
+                  onClick={() => removeFile(file.id)}
+                  className="h-6 w-6 text-zinc-400 hover:text-red-500 hover:bg-red-500/10"
+                >
+                  <X className="h-3 w-3" />
+                </Button>
                 {file.uploading && (
                   <div className="absolute inset-0 bg-black/30 rounded flex items-center justify-center">
                     <Loader2 className="h-4 w-4 animate-spin text-white" />
@@ -517,7 +534,7 @@ const MessageInput: React.FC<MessageInputProps> = ({
 
       <div 
         className={cn(
-          "flex items-end gap-2",
+          "flex items-end gap-1",
           isDragOver && "ring-2 ring-dashed ring-primary"
         )}
         onDragOver={handleDragOver}
@@ -528,16 +545,16 @@ const MessageInput: React.FC<MessageInputProps> = ({
           type="button"
           variant="ghost"
           size="icon"
-          className="flex-shrink-0 text-muted-foreground hover:text-foreground"
+          className="flex-shrink-0 text-zinc-400 hover:text-yuhu-primary hover:bg-zinc-800 h-12 w-12 touch-target rounded-lg"
           disabled={disabled || uploading}
           onClick={() => fileInputRef.current?.click()}
         >
-          <ImageIcon className="h-5 w-5" />
-          <span className="sr-only">Attach Images</span>
+          <Paperclip className="h-5 w-5" />
+          <span className="sr-only">Attach Files</span>
         </Button>
         <input
           type="file"
-          accept="image/*"
+          accept="image/*,application/pdf,.doc,.docx,.txt,.zip,.rar,.mp4,.mp3,.wav,.avi,.mov,.ppt,.pptx,.xls,.xlsx"
           multiple
           ref={fileInputRef}
           className="hidden"
@@ -545,12 +562,12 @@ const MessageInput: React.FC<MessageInputProps> = ({
           disabled={disabled || uploading}
         />
         <div className={cn(
-          "relative flex-1 rounded-md border shadow-sm focus-within:ring-1 focus-within:ring-ring",
+          "relative flex-1 rounded-lg border border-zinc-600 bg-zinc-800 shadow-sm focus-within:ring-1 focus-within:ring-yuhu-primary",
           disabled && "opacity-50"
         )}>
           <Textarea
-            placeholder="Type a message or drag & drop images..."
-            className="min-h-12 resize-none px-3 py-2 border-none shadow-none focus-visible:ring-0"
+            placeholder="Type a message or drag & drop files..."
+            className="min-h-14 resize-none px-3 py-3 border-none shadow-none focus-visible:ring-0 text-base sm:text-sm bg-transparent text-white placeholder-zinc-400"
             value={message}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
@@ -570,8 +587,8 @@ const MessageInput: React.FC<MessageInputProps> = ({
           variant="ghost"
           size="icon"
           className={cn(
-            "flex-shrink-0",
-            isRecording ? "text-red-500 hover:text-red-600" : "text-muted-foreground hover:text-foreground"
+            "flex-shrink-0 h-12 w-12 touch-target rounded-lg",
+            isRecording ? "text-red-500 hover:text-red-600 hover:bg-zinc-800" : "text-zinc-400 hover:text-yuhu-primary hover:bg-zinc-800"
           )}
           onClick={isRecording ? stopRecording : startRecording}
           disabled={disabled || uploading}
@@ -583,22 +600,13 @@ const MessageInput: React.FC<MessageInputProps> = ({
           )}
           <span className="sr-only">{isRecording ? "Stop Recording" : "Record Voice Message"}</span>
         </Button>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon"
-          className="flex-shrink-0 text-muted-foreground hover:text-foreground"
-          disabled={disabled}
-        >
-          <Smile className="h-5 w-5" />
-          <span className="sr-only">Emoji</span>
-        </Button>
+        <EmojiPicker onEmojiSelect={handleEmojiSelect} disabled={disabled} />
         <Button
           type="button"
           size="icon"
           className={cn(
-            "flex-shrink-0",
-            (message.trim() || selectedFiles.length > 0) ? "bg-yuhu-primary hover:bg-yuhu-dark" : "bg-muted text-muted-foreground hover:bg-muted"
+            "flex-shrink-0 h-12 w-12 touch-target rounded-lg",
+            (message.trim() || selectedFiles.length > 0) ? "bg-yuhu-primary hover:bg-yuhu-dark text-white" : "bg-zinc-700 text-zinc-400 hover:bg-zinc-600"
           )}
           disabled={(!message.trim() && selectedFiles.length === 0) || disabled || isRecording}
           onClick={handleSendMessage}

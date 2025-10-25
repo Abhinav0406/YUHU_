@@ -1,10 +1,33 @@
-// Notification Service for PWA
+// Enhanced Notification Service for PWA + Push Notifications
+import { pushNotificationService } from './pushNotificationService';
+
+// Define NotificationAction interface
+interface NotificationAction {
+  action: string;
+  title: string;
+  icon?: string;
+}
+
+// Extended NotificationOptions interface to include actions
+interface ExtendedNotificationOptions extends NotificationOptions {
+  actions?: NotificationAction[];
+}
+
 export class NotificationService {
   private static instance: NotificationService;
   private permission: NotificationPermission = 'default';
 
   private constructor() {
     this.checkPermission();
+    this.initializePushNotifications();
+  }
+
+  private async initializePushNotifications(): Promise<void> {
+    try {
+      await pushNotificationService.initialize();
+    } catch (error) {
+      console.error('Failed to initialize push notifications:', error);
+    }
   }
 
   public static getInstance(): NotificationService {
@@ -45,7 +68,7 @@ export class NotificationService {
     }
   }
 
-  public async showNotification(title: string, options: NotificationOptions = {}): Promise<void> {
+  public async showNotification(title: string, options: ExtendedNotificationOptions = {}): Promise<void> {
     if (this.permission !== 'granted') {
       console.log('Notification permission not granted');
       return;
@@ -162,6 +185,81 @@ export class NotificationService {
         notifications.forEach(notification => notification.close());
       }
     }
+  }
+
+  // Enhanced methods for push notifications
+  public async sendMessageNotification(senderName: string, message: string, chatId: string, recipientUserId: string, senderAvatar?: string): Promise<void> {
+    // Show in-app notification if app is open
+    await this.showMessageNotification(senderName, message, chatId, senderAvatar);
+    
+    // Send push notification for out-of-app scenarios
+    try {
+      await pushNotificationService.sendPushNotification(
+        recipientUserId,
+        `New message from ${senderName}`,
+        message,
+        {
+          chatId,
+          senderName,
+          senderAvatar,
+          type: 'message'
+        }
+      );
+    } catch (error) {
+      console.error('Failed to send push notification:', error);
+    }
+  }
+
+  public async sendCallNotification(callerName: string, recipientUserId: string, isVideo: boolean = false): Promise<void> {
+    // Show in-app notification if app is open
+    await this.showCallNotification(callerName, isVideo);
+    
+    // Send push notification for out-of-app scenarios
+    try {
+      await pushNotificationService.sendPushNotification(
+        recipientUserId,
+        `Incoming ${isVideo ? 'video' : 'voice'} call`,
+        `${callerName} is calling you`,
+        {
+          callerName,
+          isVideo,
+          type: 'call'
+        }
+      );
+    } catch (error) {
+      console.error('Failed to send push notification:', error);
+    }
+  }
+
+  public async sendFriendRequestNotification(senderName: string, recipientUserId: string, senderAvatar?: string): Promise<void> {
+    // Show in-app notification if app is open
+    await this.showFriendRequestNotification(senderName);
+    
+    // Send push notification for out-of-app scenarios
+    try {
+      await pushNotificationService.sendPushNotification(
+        recipientUserId,
+        'New friend request',
+        `${senderName} wants to be your friend`,
+        {
+          senderName,
+          senderAvatar,
+          type: 'friend_request'
+        }
+      );
+    } catch (error) {
+      console.error('Failed to send push notification:', error);
+    }
+  }
+
+  // Get FCM token for backend registration
+  public getFCMToken(): string | null {
+    return pushNotificationService.getFCMToken();
+  }
+
+  // Check if push notifications are available
+  public async isPushNotificationSupported(): Promise<boolean> {
+    return await pushNotificationService.checkPermissions();
   }
 }
 

@@ -62,25 +62,8 @@ const NotificationPermission: React.FC<NotificationPermissionProps> = ({ onPermi
   }
 
   if (permission === 'granted') {
-    return (
-      <div className="bg-green-900/20 border border-green-500/30 rounded-lg p-4 mb-4">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 text-green-400">
-            <CheckCircle className="w-5 h-5" />
-            <span className="font-medium">Notifications enabled</span>
-          </div>
-          <button
-            onClick={handleTestNotification}
-            className="bg-green-600 hover:bg-green-500 text-white px-3 py-1 rounded-lg text-sm font-medium transition"
-          >
-            Test
-          </button>
-        </div>
-        <p className="text-green-300/80 text-sm mt-1">
-          You'll receive notifications for new messages and friend requests.
-        </p>
-      </div>
-    );
+    // Don't show banner when notifications are enabled
+    return null;
   }
 
   if (permission === 'denied') {

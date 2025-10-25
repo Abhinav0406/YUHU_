@@ -74,6 +74,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     enabled: !!activeChatId && !!user?.id,
     refetchInterval: 3000, // Poll for new messages every 3 seconds
   });
+  
 
   // Send message mutation
   const sendMessageMutation = useMutation({
@@ -828,9 +829,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         // Use notification service for call notifications
         notificationService.showCallNotification(
           chatDetails?.name || 'Someone',
-          true, // isIncoming
-          activeChatId,
-          chatDetails?.avatar
+          callType === 'video'
         );
       }
     });
@@ -854,10 +853,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   // Loading state
   if (isLoadingDetails || isLoadingMessages) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-muted/30">
+      <div className="flex-1 flex items-center justify-center bg-zinc-900">
         <div className="text-center">
           <Loader2 className="h-8 w-8 text-yuhu-primary animate-spin mx-auto" />
-          <p className="mt-4 text-muted-foreground">Loading chat...</p>
+          <p className="mt-4 text-zinc-300">Loading chat...</p>
         </div>
       </div>
     );
@@ -866,12 +865,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   // Error state
   if (detailsError || messagesError || !chatDetails) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-muted/30">
+      <div className="flex-1 flex items-center justify-center bg-zinc-900">
         <div className="text-center">
-          <h3 className="text-lg font-medium text-muted-foreground">
+          <h3 className="text-lg font-medium text-white">
             Error loading chat
           </h3>
-          <p className="text-sm text-muted-foreground mt-1">
+          <p className="text-sm text-zinc-400 mt-1">
             Please try again later
           </p>
           <Button 
@@ -887,10 +886,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
 
   if (!activeChatId || !chatDetails) {
     return (
-      <div className="flex-1 flex items-center justify-center bg-muted/30">
+      <div className="flex-1 flex items-center justify-center bg-zinc-900">
         <div className="text-center">
-          <h3 className="text-lg font-medium text-muted-foreground">Select a chat to start messaging</h3>
-          <p className="text-sm text-muted-foreground mt-1">
+          <h3 className="text-lg font-medium text-white">Select a chat to start messaging</h3>
+          <p className="text-sm text-zinc-400 mt-1">
             Or start a new conversation with a classmate
           </p>
         </div>
@@ -898,18 +897,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     );
   }
   
+  
   return (
-    <div className="flex flex-col h-full w-full max-w-full bg-background bg-[url('/images/chat2.jpg')] bg-cover bg-center bg-no-repeat bg-opacity-10">
+    <div className="flex flex-col h-full w-full max-w-full bg-zinc-900 bg-[url('/images/chat2.jpg')] bg-cover bg-center bg-no-repeat bg-opacity-10">
       {/* Chat header */}
-      <div className="border-b p-2 sm:p-3 flex items-center justify-between min-h-[56px] sm:min-h-[64px]">
-        <div className="flex items-center min-w-0 cursor-pointer" onClick={handleShowProfile}>
+      <div className="border-b border-zinc-700 p-2 sm:p-3 flex items-center justify-between min-h-[56px] sm:min-h-[64px] bg-zinc-900/95 backdrop-blur-sm">
+        <div className="flex items-center min-w-0 cursor-pointer touch-target" onClick={handleShowProfile}>
           <Avatar className="h-8 w-8 sm:h-9 sm:w-9">
             <AvatarImage src={chatDetails.avatar} alt={chatDetails.name} />
             <AvatarFallback>{chatDetails.name[0]}</AvatarFallback>
           </Avatar>
           <div className="ml-2 sm:ml-3 min-w-0">
-            <div className="font-semibold text-base sm:text-lg truncate">{chatDetails.name}</div>
-            <div className="text-xs sm:text-sm text-muted-foreground truncate">
+            <div className="font-semibold text-base sm:text-lg truncate text-white">{chatDetails.name}</div>
+            <div className="text-xs sm:text-sm text-zinc-400 truncate">
               {chatDetails.type === 'direct' ? (
                 chatDetails.online ? 'Online' : 'Offline'
               ) : (
@@ -919,20 +919,20 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           </div>
         </div>
         <div className="flex items-center space-x-1">
-                      {/* Add Call buttons for direct chats */}
+          {/* Add Call buttons for direct chats */}
           {chatDetails.type === 'direct' && (
             <>
-              <Button variant="ghost" size="icon" className="text-yuhu-primary" onClick={() => startCall('voice')} title="Voice Call">
+              <Button variant="ghost" size="icon" className="text-yuhu-primary hover:bg-zinc-800 h-10 w-10 touch-target" onClick={() => startCall('voice')} title="Voice Call">
                 <Phone className="h-5 w-5" />
               </Button>
-              <Button variant="ghost" size="icon" className="text-yuhu-primary" onClick={() => startCall('video')} title="Video Call">
+              <Button variant="ghost" size="icon" className="text-yuhu-primary hover:bg-zinc-800 h-10 w-10 touch-target" onClick={() => startCall('video')} title="Video Call">
                 <Video className="h-5 w-5" />
               </Button>
             </>
           )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="text-muted-foreground touch-target">
+              <Button variant="ghost" size="icon" className="text-zinc-400 hover:text-white hover:bg-zinc-800 h-10 w-10 touch-target">
                 <MoreVertical className="h-5 w-5" />
                 <span className="sr-only">More options</span>
               </Button>
@@ -982,16 +982,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               </div>
             </div>
           )}
-          {/* Debug info - remove this later */}
-          <div className="text-xs text-muted-foreground mt-2">
-            Debug: typingUsers = [{typingUsers.join(', ')}]
-          </div>
           <div ref={scrollRef} />
         </div>
       </ScrollArea>
       
       {/* Message input */}
-      <div className="px-1 sm:px-4 pb-2 sm:pb-4 w-full max-w-full">
+      <div className="px-1 sm:px-2 pb-1 sm:pb-2 w-full max-w-full">
         <MessageInput 
           onSendMessage={handleSendMessage} 
           disabled={isLoadingMessages}
@@ -1151,10 +1147,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               </div>
             )}
             {/* Call Controls */}
-            <div className="flex gap-4 mt-6 mb-2 w-full justify-center">
+            <div className="flex gap-3 sm:gap-4 mt-6 mb-2 w-full justify-center flex-wrap">
               {isReceivingCall && (
                 <Button
-                  className="rounded-full bg-green-600 hover:bg-green-700 text-white shadow px-6 font-bold"
+                  className="rounded-full bg-green-600 hover:bg-green-700 text-white shadow px-6 py-3 font-bold text-lg h-12 touch-target"
                   onClick={answerCall}
                   title="Accept Call"
                 >
@@ -1164,7 +1160,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               <Button
                 variant={isMuted ? 'secondary' : 'ghost'}
                 size="icon"
-                className={`rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow ${isMuted ? 'bg-yellow-600' : ''}`}
+                className={`rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow h-12 w-12 touch-target ${isMuted ? 'bg-yellow-600' : ''}`}
                 onClick={toggleMute}
                 title={isMuted ? 'Unmute' : 'Mute'}
               >
@@ -1180,7 +1176,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                 <Button
                   variant={isCameraOn ? 'ghost' : 'secondary'}
                   size="icon"
-                  className={`rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow ${!isCameraOn ? 'bg-yellow-600' : ''}`}
+                  className={`rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow h-12 w-12 touch-target ${!isCameraOn ? 'bg-yellow-600' : ''}`}
                   onClick={toggleCamera}
                   title={isCameraOn ? 'Turn Off Camera' : 'Turn On Camera'}
                 >
@@ -1196,7 +1192,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
               <Button
                 variant="ghost"
                 size="icon"
-                className="rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow"
+                className="rounded-full bg-zinc-800 hover:bg-zinc-700 text-white shadow h-12 w-12 touch-target"
                 onClick={() => setShowDebug(!showDebug)}
                 title="Toggle Debug Info"
               >
@@ -1205,7 +1201,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                 </svg>
               </Button>
               <Button
-                className="rounded-full bg-red-600 hover:bg-red-700 text-white shadow px-6 font-bold"
+                className="rounded-full bg-red-600 hover:bg-red-700 text-white shadow px-6 py-3 font-bold text-lg h-12 touch-target"
                 onClick={endCall}
                 title="End Call"
               >

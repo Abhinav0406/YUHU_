@@ -9,7 +9,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger
 } from '@/components/ui/dropdown-menu';
-import { MessageSquare, User, Settings, LogOut, UserPlus, Menu, X, MoreVertical, Phone } from 'lucide-react';
+import { MessageSquare, User, Settings, LogOut, UserPlus, Menu, X, MoreVertical, Phone, Search } from 'lucide-react';
 import { Dialog, DialogTrigger, DialogContent } from '@/components/ui/dialog';
 import UserExplorerTabs from './UserExplorer';
 import NotificationBadge from './NotificationBadge';
@@ -19,9 +19,11 @@ import { cn } from '@/lib/utils';
 
 interface HeaderProps {
   onSidebarToggle?: () => void;
+  onSearchToggle?: () => void;
+  isSearchActive?: boolean;
 }
 
-const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
+const Header: React.FC<HeaderProps> = ({ onSidebarToggle, onSearchToggle, isSearchActive }) => {
   const { user, profile, isAuthenticated, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
@@ -59,23 +61,16 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
 
   return (
     <header className={cn(
-      "border-b py-3 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-50",
-      isChatPage ? "bg-zinc-900 text-white" : "bg-white text-yuhu-primary"
+      "py-3 px-4 sm:px-6 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md",
+      isChatPage ? "bg-zinc-900/95 text-white border-b border-zinc-800" : "bg-white/95 text-yuhu-primary border-b border-zinc-200"
     )}>
       <div className="flex items-center">
-        {/* Hamburger for mobile */}
-        {onSidebarToggle && isChatPage && (
-          <button
-            className="md:hidden mr-2 p-2 rounded-full bg-zinc-800 text-white"
-            onClick={onSidebarToggle}
-            aria-label="Open sidebar"
-          >
-            <Menu className="h-6 w-6" />
-          </button>
-        )}
-        <Link to={isAuthenticated ? "/chat" : "/"} className="flex items-center">
-          <img src="/images/Logo2.png" alt="Yuhu Logo" className="h-8 w-8 mr-2" />
-          <h1 className="text-xl sm:text-2xl font-bold">Yuhu</h1>
+        <Link to={isAuthenticated ? "/chat" : "/"} className="flex items-center group">
+          <div className="relative">
+            <img src="/images/Logo2.png" alt="Yuhu Logo" className="h-8 w-8 mr-3 group-hover:scale-110 transition-transform" />
+            <div className="absolute -top-1 -right-1 w-3 h-3 bg-green-500 rounded-full border-2 border-white animate-pulse"></div>
+          </div>
+          <h1 className="text-xl sm:text-2xl font-bold group-hover:text-yuhu-primary transition-colors">Yuhu</h1>
         </Link>
       </div>
 
@@ -83,7 +78,18 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
         <>
           {/* Mobile Menu Button (right side) */}
           <div className="flex items-center md:hidden ml-auto">
-            <NotificationCenter />
+            {onSearchToggle && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onSearchToggle}
+                title="Search"
+                aria-label="Search"
+                className={isSearchActive ? "text-yuhu-primary" : ""}
+              >
+                <Search className="h-5 w-5" />
+              </Button>
+            )}
             <Button
               variant="ghost"
               size="icon"
@@ -126,7 +132,18 @@ const Header: React.FC<HeaderProps> = ({ onSidebarToggle }) => {
                 </Link>
               </Button>
             </nav>
-            <NotificationCenter />
+            {onSearchToggle && (
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={onSearchToggle}
+                title="Search"
+                aria-label="Search"
+                className={isSearchActive ? "text-yuhu-primary" : ""}
+              >
+                <Search className="h-5 w-5" />
+              </Button>
+            )}
             <Dialog>
               <DialogTrigger asChild>
                 <Button variant="ghost" size="icon" className="text-yuhu-primary" title="Add Friend">
