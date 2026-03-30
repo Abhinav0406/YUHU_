@@ -1,0 +1,45 @@
+.env
+.env.*
+!.env.example
+
+# Node / package manager
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json*
+yarn.lock*
+pnpm-lock.yaml*
+
+# Expo / React Native / Metro
+.expo/
+.expo-shared/
+.expo-web/
+.expo-dev/
+dist/
+web-build/
+
+# Bundler / cache
+.cache/
+.turbo/
+.parcel-cache/
+
+# OS / editor junk
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+
+# Testing / coverage
+coverage/
+
+# Logs
+logs/
+
+# Firebase / Google config
+google-services.json
+
+.google-services.json

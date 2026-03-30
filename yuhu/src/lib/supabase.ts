@@ -1,8 +1,14 @@
 import { createClient } from '@supabase/supabase-js';
 import { Database } from '@/types/supabase';
 
-const supabaseUrl = 'https://awazxytwuhmsyogfdrho.supabase.co';
-const supabaseKey = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImF3YXp4eXR3dWhtc3lvZ2ZkcmhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDY3MjEzNjMsImV4cCI6MjA2MjI5NzM2M30.bAOXIXvLJBiQ5DVmtEpnyJ8ZqTk5bUV1zJ2S1pyfBzg';
+const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
+const supabaseKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
+
+if (!supabaseUrl || !supabaseKey) {
+  console.warn(
+    '[Supabase] Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in yuhu/.env (see .env.example).',
+  );
+}
 
 export const supabase = createClient<Database>(supabaseUrl, supabaseKey);
 

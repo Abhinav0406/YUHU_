@@ -1,0 +1,103 @@
+{
+  "expo": {
+    "name": "Yuhu",
+    "slug": "yuhu",
+    "version": "1.0.0",
+    "sdkVersion": "54.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/chat2.jpg",
+      "resizeMode": "cover",
+      "backgroundColor": "#000000"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#ffffff"
+      },
+      "package": "com.yuhu.app",
+      "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO",
+        "CAMERA",
+        "RECORD_AUDIO",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_VISUAL_USER_SELECTED",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.READ_MEDIA_AUDIO"
+      ]
+    },
+    "ios": {
+      "supportsTablet": false,
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app needs access to your camera to take and send photos.",
+        "NSMicrophoneUsageDescription": "This app needs access to your microphone to send voice messages.",
+        "NSPhotoLibraryUsageDescription": "This app needs access to your photo library to send images.",
+        "NSDocumentPickerUsageDescription": "This app needs access to your documents to send files."
+      }
+    },
+    "web": {
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/icon.png",
+          "color": "#6C63FF",
+          "mode": "production"
+        }
+      ],
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "Allow Yuhu to access your photos to save images to your gallery.",
+          "savePhotosPermission": "Allow Yuhu to save photos to your gallery.",
+          "isAccessMediaLocationEnabled": false
+        }
+      ]
+    ],
+    "notification": {
+      "icon": "./assets/icon.png",
+      "color": "#6C63FF",
+      "iosDisplayInForeground": true,
+      "androidMode": "default",
+      "androidCollapsedTitle": "#{unread_notifications} new messages"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "58309847-1175-44af-8c48-df1ef05556bf"
+      }
+    },
+    "owner": "abhinav0406",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/58309847-1175-44af-8c48-df1ef05556bf"
+    }
+  }
+}
