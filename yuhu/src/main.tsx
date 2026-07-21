@@ -7,17 +7,10 @@ if (typeof document !== 'undefined') {
   document.documentElement.classList.add('dark');
 }
 
-// PWA Service Worker Registration
-if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((registration) => {
-        console.log('SW registered: ', registration);
-      })
-      .catch((registrationError) => {
-        console.log('SW registration failed: ', registrationError);
-      });
-  });
-}
+// If a lazy-loaded chunk is missing (stale deploy/cache), reload for fresh assets.
+window.addEventListener('vite:preloadError', (event) => {
+  event.preventDefault();
+  window.location.reload();
+});
 
 createRoot(document.getElementById("root")!).render(<App />);
