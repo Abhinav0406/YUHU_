@@ -47,6 +47,27 @@ export class AuthError extends Error {
   }
 }
 
+function formatAuthErrorMessage(message: string, code?: string): string {
+  const normalized = message.toLowerCase();
+  const normalizedCode = code?.toLowerCase() ?? '';
+
+  if (
+    normalizedCode === 'email_not_confirmed' ||
+    normalized.includes('email not confirmed')
+  ) {
+    return 'Please confirm your email before logging in. Check your inbox and spam folder for the confirmation link from Supabase.';
+  }
+
+  if (
+    normalizedCode === 'invalid_credentials' ||
+    normalized.includes('invalid login credentials')
+  ) {
+    return 'Invalid email or password. If you just signed up, confirm your email first, then try again.';
+  }
+
+  return message;
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -241,7 +262,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       if (error) {
-        throw new AuthError(error.message, error.status?.toString());
+        throw new AuthError(
+          formatAuthErrorMessage(error.message, error.code),
+          error.code ?? error.status?.toString(),
+        );
       }
 
       return !!data.user;
@@ -362,6 +386,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       
       console.log('Profile created successfully');
+
+      if (!data.session) {
+        return 'Account created! Check your email and confirm your address before logging in.';
+      }
+
       return true;
     } catch (error) {
       console.error('Registration error:', error);

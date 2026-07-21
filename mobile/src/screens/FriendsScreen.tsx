@@ -412,7 +412,7 @@ export default function FriendsScreen() {
           <ActivityIndicator size="large" color="#6C63FF" />
         </View>
       ) : (
-        <FlatList
+        <FlatList<any>
           data={
             activeTab === 'friends'
               ? friends
@@ -420,7 +420,7 @@ export default function FriendsScreen() {
               ? pendingRequests
               : suggestions
           }
-          keyExtractor={(item) => item.id || (item as FriendRequest).id}
+          keyExtractor={(item: any) => item.id}
           renderItem={
             activeTab === 'friends'
               ? renderFriend

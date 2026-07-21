@@ -12,7 +12,7 @@ import {
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { useAuth } from '@/context/AuthContext';
+import { useAuth, AuthError } from '@/context/AuthContext';
 import { useToast } from '@/components/ui/use-toast';
 import { Loader2 } from 'lucide-react';
 
@@ -46,7 +46,7 @@ const AuthForm = () => {
         return;
       }
       
-      const success = await login(loginEmail, loginPassword);
+      const success = await login(loginEmail.trim(), loginPassword);
       
       if (success) {
         toast({
@@ -63,8 +63,11 @@ const AuthForm = () => {
       }
     } catch (error) {
       toast({
-        title: "Login error",
-        description: "An unexpected error occurred. Please try again.",
+        title: "Login failed",
+        description:
+          error instanceof AuthError
+            ? error.message
+            : "An unexpected error occurred. Please try again.",
         variant: "destructive"
       });
     } finally {
@@ -108,7 +111,11 @@ const AuthForm = () => {
     }
     
     try {
-      const result = await register(registerEmail, registerUsername, registerPassword);
+      const result = await register(
+        registerEmail.trim(),
+        registerUsername.trim(),
+        registerPassword,
+      );
       
       if (result === true) {
         toast({
@@ -116,17 +123,20 @@ const AuthForm = () => {
           description: "Welcome to Yuhu! Your account has been created successfully.",
         });
         navigate('/chat');
-      } else {
+      } else if (typeof result === 'string') {
         toast({
-          title: "Registration failed",
+          title: result.includes('Check your email') ? 'Confirm your email' : 'Registration failed',
           description: result,
-          variant: "destructive"
+          variant: result.includes('Check your email') ? 'default' : 'destructive',
         });
       }
     } catch (error) {
       toast({
-        title: "Registration error",
-        description: "An unexpected error occurred. Please try again.",
+        title: "Registration failed",
+        description:
+          error instanceof AuthError
+            ? error.message
+            : "An unexpected error occurred. Please try again.",
         variant: "destructive"
       });
     } finally {

@@ -88,8 +88,8 @@ function MainTabs() {
 function RootNavigator() {
   const { user, loading } = useAuth();
   const navigation = useNavigation();
-  const notificationListener = useRef<Notifications.Subscription>();
-  const responseListener = useRef<Notifications.Subscription>();
+  const notificationListener = useRef<Notifications.Subscription | null>(null);
+  const responseListener = useRef<Notifications.Subscription | null>(null);
 
   // Register for push notifications when user logs in
   useEffect(() => {

@@ -39,7 +39,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const login = async (email: string, password: string) => {
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error || !data.user) return false;
+    if (error) {
+      const message = error.message.toLowerCase();
+      if (error.code === 'email_not_confirmed' || message.includes('email not confirmed')) {
+        throw new Error(
+          'Please confirm your email before logging in. Check your inbox and spam folder for the confirmation link.',
+        );
+      }
+      if (error.code === 'invalid_credentials' || message.includes('invalid login credentials')) {
+        throw new Error(
+          'Invalid email or password. If you just signed up, confirm your email first, then try again.',
+        );
+      }
+      throw new Error(error.message);
+    }
+    if (!data.user) return false;
     return true;
   };
 

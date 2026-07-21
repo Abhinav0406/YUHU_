@@ -28,6 +28,7 @@ import { Audio } from 'expo-av';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import notificationService from '../services/notificationService';
+import { e2eeService } from '../services/e2eeService';
 
 const MESSAGES_PAGE_SIZE = 80;
 
@@ -258,6 +259,7 @@ export default function ChatScreen() {
   const [actionSheet, setActionSheet] = useState<{ visible: boolean; title: string; options: Array<{ label: string; icon?: string; onPress: () => void }> }>({ visible: false, title: '', options: [] });
   const [uploadingMessages, setUploadingMessages] = useState<Set<string>>(new Set());
   const audioRefs = useRef<Record<string, Audio.Sound>>({});
+  const [isDirectChat, setIsDirectChat] = useState(false);
 
   const flatListRef = useRef<FlatList>(null);
   const [isUserAtBottom, setIsUserAtBottom] = useState(true);
@@ -270,6 +272,26 @@ export default function ChatScreen() {
   useEffect(() => {
     isUserAtBottomRef.current = isUserAtBottom;
   }, [isUserAtBottom]);
+
+  useEffect(() => {
+    if (!chatId || !user?.id) return;
+
+    const initE2EE = async () => {
+      await e2eeService.initializeForUser(user.id);
+
+      const { data: chatRow } = await supabase
+        .from('chats')
+        .select('type')
+        .eq('id', chatId)
+        .single();
+
+      setIsDirectChat(chatRow?.type === 'direct');
+    };
+
+    initE2EE().catch((err) => {
+      console.error('Failed to initialize chat encryption context:', err);
+    });
+  }, [chatId, user?.id]);
 
   // Track which chat the user is currently viewing for notification suppression
   useEffect(() => {
@@ -332,7 +354,7 @@ export default function ChatScreen() {
     };
 
     loadOtherUserProfile();
-  }, [chatId, user]);
+  }, [chatId, user, isDirectChat]);
 
   // Helper function to send push notifications to chat recipients
   const sendPushNotificationToRecipients = async (messageText: string, messageType: 'text' | 'image' | 'voice' | 'file' = 'text') => {
@@ -359,7 +381,7 @@ export default function ChatScreen() {
 
       // Prepare notification title and body based on message type
       let title = `New message from ${senderName}`;
-      let body = messageText;
+      let body = 'You have a new message';
 
       if (messageType === 'image') {
         title = `${senderName} sent a photo`;
@@ -370,11 +392,6 @@ export default function ChatScreen() {
       } else if (messageType === 'file') {
         title = `${senderName} sent a file`;
         body = '📎 File';
-      } else {
-        // Truncate long text messages
-        if (body.length > 100) {
-          body = body.substring(0, 100) + '...';
-        }
       }
 
       // Send push notification to each recipient
@@ -396,6 +413,54 @@ export default function ChatScreen() {
       console.error('Error sending push notification:', error);
       // Don't show error to user - push notifications are best effort
     }
+  };
+
+  const buildEncryptedInsertPayload = async (plainText: string) => {
+    if (!user || !chatId) {
+      return {
+        text: plainText,
+        ciphertext: null,
+        nonce: null,
+        encryption_version: null,
+        sender_key_id: null,
+        content_type: 'text' as const,
+      };
+    }
+
+    try {
+      return await e2eeService.encryptDirectMessage({
+        chatId,
+        currentUserId: user.id,
+        plaintext: plainText,
+        isDirectChat,
+      });
+    } catch (error) {
+      console.error('Encryption failed, sending legacy plaintext fallback:', error);
+      return {
+        text: plainText,
+        ciphertext: null,
+        nonce: null,
+        encryption_version: null,
+        sender_key_id: null,
+        content_type: 'text' as const,
+      };
+    }
+  };
+
+  const resolveMessageText = async (msg: any): Promise<string> => {
+    const fallback = msg.text || msg.content || '';
+    if (!user?.id || !isDirectChat || !msg.ciphertext || !msg.nonce) {
+      return fallback;
+    }
+
+    const decrypted = await e2eeService.decryptDirectMessage({
+      currentUserId: user.id,
+      senderUserId: msg.sender_id,
+      ciphertext: msg.ciphertext,
+      nonce: msg.nonce,
+    });
+
+    return decrypted ?? 'Unable to decrypt message';
   };
 
   const loadMessages = useCallback(async () => {
@@ -449,9 +514,9 @@ export default function ChatScreen() {
         }
       });
 
-      const formatted: Message[] = ordered.map((msg: any) => {
+      const formatted: Message[] = await Promise.all(ordered.map(async (msg: any) => {
         const profile = profilesMap.get(msg.sender_id);
-        const text = msg.text || msg.content || '';
+        const text = await resolveMessageText(msg);
         const isImage = isImageUrl(text);
         const isVoice = isVoiceMessage(text);
         const messageReactions = reactionsMap.get(msg.id);
@@ -466,7 +531,7 @@ export default function ChatScreen() {
           type: isVoice ? 'voice' : isImage ? 'image' : undefined,
           reactions: messageReactions ? Array.from(messageReactions.values()) : [],
         };
-      });
+      }));
 
       setMessages(formatted);
       // Auto-scroll to bottom only if user is already near bottom
@@ -523,6 +588,10 @@ export default function ChatScreen() {
           }
 
           try {
+            const text = await resolveMessageText(payload.new);
+            const isImage = isImageUrl(text);
+            const isVoice = isVoiceMessage(text);
+
             // Check if message already exists (prevent duplicates)
             setMessages((prev) => {
               const exists = prev.some((msg) => msg.id === payload.new.id);
@@ -531,10 +600,6 @@ export default function ChatScreen() {
               }
 
               // Add message immediately (profile will update later)
-              const text = payload.new.text || payload.new.content || '';
-              const isImage = isImageUrl(text);
-              const isVoice = isVoiceMessage(text);
-              
               const newMessage: Message = {
                 id: payload.new.id,
                 content: text,
@@ -603,7 +668,7 @@ export default function ChatScreen() {
           } catch (error) {
             console.error('❌ Error handling new message:', error);
             // Still add message even if profile fetch fails
-            const text = payload.new.text || payload.new.content || '';
+            const text = await resolveMessageText(payload.new);
             const isImage = isImageUrl(text);
             const isVoice = isVoiceMessage(text);
             
@@ -727,13 +792,19 @@ export default function ChatScreen() {
             }\n\n`
           : '';
       const combinedText = `${replyPrefix}${text}`;
+      const encryptedPayload = await buildEncryptedInsertPayload(combinedText);
 
       const { data, error } = await supabase
         .from('messages')
         .insert({
           chat_id: chatId,
           sender_id: user.id,
-          text: combinedText,
+          text: encryptedPayload.text,
+          ciphertext: encryptedPayload.ciphertext,
+          nonce: encryptedPayload.nonce,
+          encryption_version: encryptedPayload.encryption_version,
+          sender_key_id: encryptedPayload.sender_key_id,
+          content_type: encryptedPayload.content_type,
           status: 'sent',
           created_at: new Date().toISOString(),
         })
@@ -743,7 +814,7 @@ export default function ChatScreen() {
       if (!error && data) {
         const optimisticMessage: Message = {
           id: data.id,
-          content: data.text || combinedText,
+          content: combinedText,
           sender_id: data.sender_id,
           created_at: data.created_at,
           sender_name: 'You',
@@ -861,12 +932,18 @@ export default function ChatScreen() {
         .getPublicUrl(storageData.path);
 
       const url = publicUrlData.publicUrl;
+      const encryptedPayload = await buildEncryptedInsertPayload(url);
 
       // Store voice URL in text field like web PWA does
       const { data: messageData, error: messageError } = await supabase.from('messages').insert({
         chat_id: chatId,
         sender_id: user.id,
-        text: url, // Store URL directly in text field
+        text: encryptedPayload.text,
+        ciphertext: encryptedPayload.ciphertext,
+        nonce: encryptedPayload.nonce,
+        encryption_version: encryptedPayload.encryption_version,
+        sender_key_id: encryptedPayload.sender_key_id,
+        content_type: encryptedPayload.content_type,
         status: 'sent',
         created_at: new Date().toISOString(),
       }).select().single();
@@ -877,7 +954,7 @@ export default function ChatScreen() {
       } else if (messageData) {
         const optimisticMessage: Message = {
           id: messageData.id,
-          content: messageData.text || url,
+          content: url,
           sender_id: messageData.sender_id,
           created_at: messageData.created_at,
           sender_name: 'You',
@@ -1001,11 +1078,17 @@ export default function ChatScreen() {
 
       // Store file URL in text field like web PWA does
       const messageText = url;
+      const encryptedPayload = await buildEncryptedInsertPayload(messageText);
       
       const { data: messageData, error: messageError } = await supabase.from('messages').insert({
         chat_id: chatId,
         sender_id: user.id,
-        text: messageText,
+        text: encryptedPayload.text,
+        ciphertext: encryptedPayload.ciphertext,
+        nonce: encryptedPayload.nonce,
+        encryption_version: encryptedPayload.encryption_version,
+        sender_key_id: encryptedPayload.sender_key_id,
+        content_type: encryptedPayload.content_type,
         status: 'sent',
         created_at: new Date().toISOString(),
       }).select().single();
@@ -1026,7 +1109,7 @@ export default function ChatScreen() {
           m.id === tempId 
             ? {
                 id: messageData.id,
-                content: messageData.text || messageText,
+                content: messageText,
                 sender_id: messageData.sender_id,
                 created_at: messageData.created_at,
                 sender_name: 'You',
@@ -1083,13 +1166,19 @@ export default function ChatScreen() {
         .getPublicUrl(storageData.path);
 
       const url = publicUrlData.publicUrl;
+      const encryptedPayload = await buildEncryptedInsertPayload(url);
 
       const { data: messageData, error: messageError } = await supabase
         .from('messages')
         .insert({
           chat_id: chatId,
           sender_id: user.id,
-          text: url,
+          text: encryptedPayload.text,
+          ciphertext: encryptedPayload.ciphertext,
+          nonce: encryptedPayload.nonce,
+          encryption_version: encryptedPayload.encryption_version,
+          sender_key_id: encryptedPayload.sender_key_id,
+          content_type: encryptedPayload.content_type,
           status: 'sent',
           created_at: new Date().toISOString(),
         })
@@ -1104,7 +1193,7 @@ export default function ChatScreen() {
 
       const optimisticMessage: Message = {
         id: messageData.id,
-        content: messageData.text || url,
+        content: url,
         sender_id: messageData.sender_id,
         created_at: messageData.created_at,
         sender_name: 'You',
@@ -1194,13 +1283,19 @@ export default function ChatScreen() {
 
       // Store as JSON array if multiple, or single URL if one
       const messageText = imageUrls.length > 1 ? JSON.stringify(imageUrls) : imageUrls[0];
+      const encryptedPayload = await buildEncryptedInsertPayload(messageText);
 
       const { data: messageData, error: messageError } = await supabase
         .from('messages')
         .insert({
           chat_id: chatId,
           sender_id: user.id,
-          text: messageText,
+          text: encryptedPayload.text,
+          ciphertext: encryptedPayload.ciphertext,
+          nonce: encryptedPayload.nonce,
+          encryption_version: encryptedPayload.encryption_version,
+          sender_key_id: encryptedPayload.sender_key_id,
+          content_type: encryptedPayload.content_type,
           status: 'sent',
           created_at: new Date().toISOString(),
         })
@@ -1225,7 +1320,7 @@ export default function ChatScreen() {
         m.id === tempId 
           ? {
               id: messageData.id,
-              content: messageData.text || messageText,
+              content: messageText,
               sender_id: messageData.sender_id,
               created_at: messageData.created_at,
               sender_name: 'You',
