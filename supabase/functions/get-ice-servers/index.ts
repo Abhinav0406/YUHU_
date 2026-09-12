@@ -1,27 +1,16 @@
 import { serve } from 'https://deno.land/std@0.168.0/http/server.ts';
 
-const XIRSYS_USERNAME = Deno.env.get('XIRSYS_USERNAME') ?? 'Ambica';
-const XIRSYS_CREDENTIAL = Deno.env.get('XIRSYS_CREDENTIAL') ?? 'cdb9393e-2e40-11f0-94fc-0242ac150003';
-const XIRSYS_DOMAIN = Deno.env.get('XIRSYS_DOMAIN') ?? 'YUHU';
-
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const FALLBACK_SERVERS = [
+const GOOGLE_STUN_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
   { urls: 'stun:stun1.l.google.com:19302' },
   { urls: 'stun:stun2.l.google.com:19302' },
-  {
-    urls: [
-      'turn:openrelay.metered.ca:80',
-      'turn:openrelay.metered.ca:443',
-      'turn:openrelay.metered.ca:443?transport=tcp',
-    ],
-    username: 'openrelayproject',
-    credential: 'openrelayproject',
-  },
+  { urls: 'stun:stun3.l.google.com:19302' },
+  { urls: 'stun:stun4.l.google.com:19302' },
 ];
 
 serve(async (req) => {
@@ -29,33 +18,71 @@ serve(async (req) => {
     return new Response(null, { headers: CORS_HEADERS });
   }
 
-  try {
-    const credentials = btoa(`${XIRSYS_USERNAME}:${XIRSYS_CREDENTIAL}`);
-    const body = JSON.stringify({ format: 'urls' });
+  // 1. Check for Metered TURN credentials
+  // Secret: METERED_API_KEY (in Supabase Dashboard -> Edge Functions -> Secrets)
+  const url = new URL(req.url);
+  const meteredApiKey = Deno.env.get('METERED_API_KEY') || url.searchParams.get('apiKey');
+  const meteredDomain = Deno.env.get('METERED_DOMAIN') || url.searchParams.get('domain') || 'yuhu';
 
-    const response = await fetch(`https://global.xirsys.net/_turn/${XIRSYS_DOMAIN}`, {
-      method: 'PUT',
-      headers: {
-        'Authorization': `Basic ${credentials}`,
-        'Content-Type': 'application/json',
-      },
-      body,
-    });
+  if (meteredApiKey) {
+    try {
+      console.log(`Fetching TURN credentials from Metered domain: ${meteredDomain}`);
+      const meteredRes = await fetch(
+        `https://${meteredDomain}.metered.ca/api/v1/turn/credentials?apiKey=${meteredApiKey}`
+      );
 
-    const data = await response.json();
-
-    if (data?.v?.iceServers) {
-      console.log('Returning Xirsys ICE servers');
-      return new Response(JSON.stringify(data.v.iceServers), {
-        headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-      });
+      if (meteredRes.ok) {
+        const servers = await meteredRes.json();
+        if (Array.isArray(servers) && servers.length > 0) {
+          console.log(`Successfully obtained ${servers.length} ICE servers from Metered`);
+          const combined = [...GOOGLE_STUN_SERVERS, ...servers];
+          return new Response(JSON.stringify(combined), {
+            headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+          });
+        }
+      } else {
+        console.warn(`Metered returned status ${meteredRes.status}`);
+      }
+    } catch (meteredErr) {
+      console.error('Failed to fetch from Metered:', meteredErr);
     }
-
-    throw new Error(`Unexpected Xirsys response: ${JSON.stringify(data)}`);
-  } catch (error) {
-    console.error('Xirsys failed, using fallback:', error);
-    return new Response(JSON.stringify(FALLBACK_SERVERS), {
-      headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
-    });
   }
+
+  // 2. Optional: Try Xirsys if credentials are configured
+  const xirsysUsername = Deno.env.get('XIRSYS_USERNAME');
+  const xirsysCredential = Deno.env.get('XIRSYS_CREDENTIAL');
+  const xirsysDomain = Deno.env.get('XIRSYS_DOMAIN');
+
+  if (xirsysUsername && xirsysCredential && xirsysDomain) {
+    try {
+      const credentials = btoa(`${xirsysUsername}:${xirsysCredential}`);
+      const body = JSON.stringify({ format: 'urls' });
+
+      const response = await fetch(`https://global.xirsys.net/_turn/${xirsysDomain}`, {
+        method: 'PUT',
+        headers: {
+          Authorization: `Basic ${credentials}`,
+          'Content-Type': 'application/json',
+        },
+        body,
+      });
+
+      const data = await response.json();
+      if (data?.v?.iceServers) {
+        console.log('Returning Xirsys ICE servers');
+        const combined = [...GOOGLE_STUN_SERVERS, ...data.v.iceServers];
+        return new Response(JSON.stringify(combined), {
+          headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+        });
+      }
+    } catch (xirsysErr) {
+      console.warn('Xirsys failed:', xirsysErr);
+    }
+  }
+
+  // 3. Fallback: Google STUN servers (handles direct P2P connections)
+  console.log('Returning Google STUN servers');
+  return new Response(JSON.stringify(GOOGLE_STUN_SERVERS), {
+    headers: { ...CORS_HEADERS, 'Content-Type': 'application/json' },
+  });
 });

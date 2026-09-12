@@ -47,8 +47,10 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
-  const signalingUnsubRef = useRef<() => void>();
+  const isCallerRef = useRef(false);
+  const incomingOfferRef = useRef<any>(null);
   const iceCandidateQueueRef = useRef<RTCIceCandidate[]>([]);
+  const [isSignalingActive, setIsSignalingActive] = useState(false);
   
   const activeChatId = propChatId || paramChatId;
   const [isTyping, setIsTyping] = useState(false);
@@ -390,6 +392,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       return;
     }
     
+    isCallerRef.current = true;
+    incomingOfferRef.current = null;
+    iceCandidateQueueRef.current = [];
     setCallError(null);
     setCallType(type);
     setIsCalling(true);
@@ -411,6 +416,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   };
   // Answer call: set start time
   const answerCall = async () => {
+    isCallerRef.current = false;
     setCallError(null);
     setIsReceivingCall(false);
     setShowCallModal(true);
@@ -428,18 +434,19 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       duration: null
     });
     toast('Call accepted');
-    await setupMediaAndConnection(false, callType, incomingOffer);
+    const offerToUse = incomingOfferRef.current || incomingOffer;
+    await setupMediaAndConnection(false, callType, offerToUse);
   };
   // End call: reset start time and notify other party
-  const endCall = () => {
-    // Send hangup signal to other party
-    if (friendId) {
-      sendSignal(activeChatId!, {
+  const endCall = (notifyPeer: boolean = true) => {
+    // Send hangup signal to other party if requested
+    if (notifyPeer && friendId && activeChatId) {
+      sendSignal(activeChatId, {
         type: 'hangup',
         from: user.id,
         to: friendId,
         data: null
-      });
+      }).catch(err => console.warn('Failed to send hangup signal:', err));
     }
 
     setShowCallModal(false);
@@ -452,17 +459,36 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setRemoteVideoAvailable(false);
     setShowDebug(false);
     setCallType('video'); // Reset call type
-    peerConnectionRef.current?.close();
-    peerConnectionRef.current = null;
-    localStreamRef.current?.getTracks().forEach(track => track.stop());
-    localStreamRef.current = null;
+    isCallerRef.current = false;
+
+    if (peerConnectionRef.current) {
+      try {
+        peerConnectionRef.current.close();
+      } catch (e) {
+        console.warn('Error closing peer connection:', e);
+      }
+      peerConnectionRef.current = null;
+    }
+
+    if (localStreamRef.current) {
+      localStreamRef.current.getTracks().forEach(track => {
+        try {
+          track.stop();
+        } catch (e) {}
+      });
+      localStreamRef.current = null;
+    }
+
+    if (localVideoRef.current) {
+      localVideoRef.current.srcObject = null;
+    }
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
     remoteStreamRef.current = null;
     iceCandidateQueueRef.current = [];
+    incomingOfferRef.current = null;
     setIncomingOffer(null);
-    if (signalingUnsubRef.current) {
-      signalingUnsubRef.current();
-      signalingUnsubRef.current = undefined;
-    }
 
     const callEndTime = Date.now();
     if (callStartTime) {
@@ -475,12 +501,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         chat_id: activeChatId,
         duration
       });
-    } else {
+    } else if (isReceivingCall) {
       // Missed call
       logCallEvent({
         user_id: user.id,
         peer_id: friendId,
-        type: isReceivingCall ? 'incoming' : 'outgoing',
+        type: 'incoming',
         status: 'missed',
         chat_id: activeChatId,
         duration: null
@@ -693,92 +719,6 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         console.log('Signaling state:', pc.signalingState);
       };
 
-      // Setup signaling subscription
-      if (!signalingUnsubRef.current) {
-        signalingUnsubRef.current = subscribeToSignaling(activeChatId!, async (msg: SignalMessage) => {
-          console.log('Received signal', msg.type, 'from', msg.from, 'to', msg.to);
-          if (msg.to !== user.id) return;
-          
-          const pc = peerConnectionRef.current;
-          if (!pc && msg.type !== 'hangup') {
-            console.warn('No peer connection available for signal:', msg.type);
-            return;
-          }
-          
-          try {
-            if (msg.type === 'offer' && !isCaller) {
-              console.log('Handling incoming offer:', msg.data);
-              console.log('Current signaling state:', pc.signalingState);
-              
-              if (pc.signalingState !== 'stable') {
-                console.warn('Peer connection not in stable state:', pc.signalingState);
-              }
-              
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
-              console.log('Remote description set successfully');
-              
-              const answer = await pc.createAnswer();
-              console.log('Answer created:', answer);
-              
-              await pc.setLocalDescription(answer);
-              console.log('Local description set successfully');
-              
-              sendSignal(activeChatId!, {
-                type: 'answer',
-                from: user.id,
-                to: friendId!,
-                data: answer,
-              });
-              console.log('Answer sent successfully');
-              
-            } else if (msg.type === 'answer' && isCaller) {
-              console.log('Handling incoming answer:', msg.data);
-              console.log('Current signaling state:', pc.signalingState);
-
-              if (pc.signalingState !== 'have-local-offer') {
-                console.warn('Unexpected signaling state for answer:', pc.signalingState);
-              }
-
-              await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
-              console.log('Remote description set from answer');
-
-              // Drain any ICE candidates that arrived before the answer
-              for (const candidate of iceCandidateQueueRef.current) {
-                try { await pc.addIceCandidate(candidate); } catch (e) { console.warn('Queued ICE error:', e); }
-              }
-              iceCandidateQueueRef.current = [];
-
-            } else if (msg.type === 'ice') {
-              console.log('Received ICE candidate:', msg.data);
-
-              if (pc.remoteDescription) {
-                try {
-                  await pc.addIceCandidate(new RTCIceCandidate(msg.data));
-                  console.log('ICE candidate added successfully');
-                } catch (e) {
-                  console.warn('Failed to add ICE candidate:', e);
-                }
-              } else {
-                console.log('Queuing ICE candidate (remote description not set yet)');
-                iceCandidateQueueRef.current.push(new RTCIceCandidate(msg.data));
-              }
-              
-            } else if (msg.type === 'hangup') {
-              console.log('Received hangup signal');
-              endCall();
-            }
-          } catch (error) {
-            console.error('Error handling signal:', msg.type, error);
-            setCallError(`Signal handling error (${msg.type}): ${error.message}`);
-            
-            // Don't end call immediately for ICE candidate errors
-            if (msg.type !== 'ice') {
-              setTimeout(() => endCall(), 2000);
-            }
-          }
-        });
-      }
-
       // Callee: process the already-received offer immediately (it arrived before we set up this connection)
       if (!isCaller && receivedOffer && friendId) {
         try {
@@ -787,8 +727,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
           console.log('Remote description set from received offer');
 
           // Drain any ICE candidates that arrived before remote description
+          console.log(`Draining ${iceCandidateQueueRef.current.length} queued ICE candidates on callee`);
           for (const candidate of iceCandidateQueueRef.current) {
-            try { await pc.addIceCandidate(candidate); } catch (e) { console.warn('Queued ICE error:', e); }
+            try {
+              await pc.addIceCandidate(candidate);
+            } catch (e) {
+              console.warn('Queued ICE error on callee:', e);
+            }
           }
           iceCandidateQueueRef.current = [];
 
@@ -806,7 +751,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         } catch (error) {
           console.error('Error processing received offer:', error);
           setCallError(`Failed to answer call: ${(error as Error).message}`);
-          endCall();
+          endCall(true);
         }
       }
 
@@ -837,55 +782,103 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         } catch (error) {
           console.error('Error creating/sending offer:', error);
           setCallError(`Failed to start call: ${error.message}`);
-          endCall();
+          endCall(true);
         }
       }
     } catch (error) {
       console.error('Error setting up media and connection:', error);
       setCallError('Failed to start call: ' + (error as Error).message);
-      endCall();
+      endCall(true);
     }
   };
 
-  // Handle incoming signaling (offer)
+  // Unified Signaling Listener for WebRTC
   useEffect(() => {
     if (!activeChatId || !user?.id) return;
     
-    console.log('Setting up global signaling listener for chat:', activeChatId, 'user:', user.id);
+    console.log('Setting up unified signaling listener for chat:', activeChatId, 'user:', user.id);
+    setIsSignalingActive(true);
     
-    // Listen for incoming offers
-    const unsub = subscribeToSignaling(activeChatId, (msg: SignalMessage) => {
-      console.log('📞 Incoming signal (global effect):', msg.type, 'from:', msg.from, 'to:', msg.to, 'userId:', user.id);
-      console.log('📞 Message details:', msg);
-      
-      if (msg.to !== user.id) {
-        console.log('📞 Signal not for me, ignoring');
-        return;
-      }
-      
-      if (msg.type === 'offer') {
-        console.log('📞 Incoming call offer received! Setting receive call state');
-        
-        // Extract call type from offer data
-        const incomingCallType = msg.data?.callType || 'video';
-        console.log('📞 Incoming call type:', incomingCallType);
-        setCallType(incomingCallType);
-        setIsReceivingCall(true);
-        setIncomingOffer(msg.data);
+    const unsub = subscribeToSignaling(activeChatId, async (msg: SignalMessage) => {
+      if (msg.to !== user.id) return;
+      console.log('📞 Received signal:', msg.type, 'from:', msg.from, 'to:', msg.to);
 
-        // Use notification service for call notifications
-        notificationService.showCallNotification(
-          chatDetails?.name || 'Someone',
-          callType === 'video'
-        );
+      try {
+        if (msg.type === 'offer') {
+          if (isCallerRef.current) {
+            console.log('Ignoring offer while caller');
+            return;
+          }
+          console.log('📞 Incoming call offer received! Setting receive call state');
+          const incomingCallType = msg.data?.callType || 'video';
+          setCallType(incomingCallType);
+          setIsReceivingCall(true);
+          setIncomingOffer(msg.data);
+          incomingOfferRef.current = msg.data;
+          // Clear any leftover candidates from previous calls
+          iceCandidateQueueRef.current = [];
+
+          notificationService.showCallNotification(
+            chatDetails?.name || 'Someone',
+            incomingCallType === 'video'
+          );
+        } else if (msg.type === 'answer') {
+          const pc = peerConnectionRef.current;
+          if (!pc) {
+            console.warn('Received answer but no active RTCPeerConnection found');
+            return;
+          }
+          console.log('📞 Caller received answer, setting remote description');
+          if (pc.signalingState === 'have-local-offer') {
+            await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
+            console.log('✅ Remote description set from answer on caller');
+
+            // Drain any queued ICE candidates that arrived before the answer
+            console.log(`Draining ${iceCandidateQueueRef.current.length} queued ICE candidates on caller`);
+            for (const candidate of iceCandidateQueueRef.current) {
+              try {
+                await pc.addIceCandidate(candidate);
+              } catch (e) {
+                console.warn('Queued ICE error on caller:', e);
+              }
+            }
+            iceCandidateQueueRef.current = [];
+          } else {
+            console.warn('Unexpected signaling state for answer:', pc.signalingState);
+          }
+        } else if (msg.type === 'ice') {
+          if (!msg.data || !msg.data.candidate) return;
+          const pc = peerConnectionRef.current;
+
+          // If peer connection exists and remote description has been set, add candidate directly
+          if (pc && pc.remoteDescription && pc.remoteDescription.type) {
+            try {
+              await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+              console.log('✅ Added incoming ICE candidate to peer connection');
+            } catch (err) {
+              console.warn('Failed to add incoming ICE candidate:', err);
+            }
+          } else {
+            // Queue candidate until remote description is set (essential while ringing)
+            console.log('📥 Queued incoming ICE candidate (remoteDescription not ready yet)');
+            iceCandidateQueueRef.current.push(new RTCIceCandidate(msg.data));
+          }
+        } else if (msg.type === 'hangup') {
+          console.log('📞 Received hangup from remote peer');
+          toast(`${chatDetails?.name || 'Friend'} ended the call`);
+          endCall(false); // false = don't echo hangup back
+        }
+      } catch (err: any) {
+        console.error('Error handling signal message:', msg.type, err);
       }
     });
     
     return () => {
-      console.log('📞 Cleaning up global signaling listener');
+      console.log('📞 Cleaning up signaling listener');
+      setIsSignalingActive(false);
       unsub();
     };
-  }, [activeChatId, user?.id, chatDetails]);
+  }, [activeChatId, user?.id, chatDetails?.name]);
 
   // Attach video refs on modal open
   useEffect(() => {
@@ -1268,7 +1261,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                   <div>Chat ID: <span className="text-blue-400 break-all">{activeChatId}</span></div>
                   <div>Friend ID: <span className="text-blue-400">{friendId || 'NOT FOUND'}</span></div>
                   <div>User ID: <span className="text-blue-400">{user?.id}</span></div>
-                  <div>Signaling: <span className={signalingUnsubRef.current ? 'text-green-400' : 'text-red-400'}>{signalingUnsubRef.current ? 'Active' : 'Not Active'}</span></div>
+                  <div>Signaling: <span className={isSignalingActive ? 'text-green-400' : 'text-red-400'}>{isSignalingActive ? 'Active' : 'Not Active'}</span></div>
                 </div>
                 <div className="mt-2 pt-2 border-t border-zinc-600">
                   <div className="text-yellow-400 font-semibold">Quick Actions:</div>
