@@ -14,6 +14,8 @@ import {
   ScrollView,
   ImageBackground,
   Linking,
+  Alert,
+  StatusBar,
 } from 'react-native';
 import { Swipeable } from 'react-native-gesture-handler';
 import { useRoute, useFocusEffect, useNavigation } from '@react-navigation/native';
@@ -28,7 +30,7 @@ import { Audio } from 'expo-av';
 import { useAuth } from '../context/AuthContext';
 import { supabase } from '../lib/supabase';
 import notificationService from '../services/notificationService';
-import { e2eeService } from '../services/e2eeService';
+import { broadcastCallToUser } from '../services/webrtcSignaling';
 
 const MESSAGES_PAGE_SIZE = 80;
 
@@ -253,7 +255,7 @@ export default function ChatScreen() {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
   const [audioDurations, setAudioDurations] = useState<Record<string, number>>({});
-  const [otherUserProfile, setOtherUserProfile] = useState<{ avatar_url?: string; id?: string } | null>(null);
+  const [otherUserProfile, setOtherUserProfile] = useState<{ avatar_url?: string; id?: string; status?: string } | null>(null);
   const [showProfileModal, setShowProfileModal] = useState(false);
   const [customModal, setCustomModal] = useState<{ visible: boolean; title: string; message: string; type?: 'error' | 'success' | 'info'; onConfirm?: () => void }>({ visible: false, title: '', message: '' });
   const [actionSheet, setActionSheet] = useState<{ visible: boolean; title: string; options: Array<{ label: string; icon?: string; onPress: () => void }> }>({ visible: false, title: '', options: [] });
@@ -276,9 +278,7 @@ export default function ChatScreen() {
   useEffect(() => {
     if (!chatId || !user?.id) return;
 
-    const initE2EE = async () => {
-      await e2eeService.initializeForUser(user.id);
-
+    const fetchChatType = async () => {
       const { data: chatRow } = await supabase
         .from('chats')
         .select('type')
@@ -288,8 +288,8 @@ export default function ChatScreen() {
       setIsDirectChat(chatRow?.type === 'direct');
     };
 
-    initE2EE().catch((err) => {
-      console.error('Failed to initialize chat encryption context:', err);
+    fetchChatType().catch((err) => {
+      console.error('Failed to fetch chat type:', err);
     });
   }, [chatId, user?.id]);
 
@@ -356,6 +356,74 @@ export default function ChatScreen() {
     loadOtherUserProfile();
   }, [chatId, user, isDirectChat]);
 
+  // Start an outgoing audio or video call
+  const startCall = async (type: 'voice' | 'video') => {
+    if (!chatId || !user?.id) return;
+
+    try {
+      let targetUserId = otherUserProfile?.id;
+      let targetAvatar = otherUserProfile?.avatar_url;
+
+      if (!targetUserId) {
+        const { data: participants } = await supabase
+          .from('chat_participants')
+          .select('profile_id')
+          .eq('chat_id', chatId)
+          .neq('profile_id', user.id);
+
+        if (participants && participants.length > 0) {
+          targetUserId = participants[0].profile_id;
+        }
+      }
+
+      if (!targetUserId) {
+        Alert.alert('Call Unavailable', 'Could not locate the recipient for this call.');
+        return;
+      }
+
+      // Send wake-up / high-priority incoming call push notification
+      const { data: senderProfile } = await supabase
+        .from('profiles')
+        .select('full_name, username, avatar_url')
+        .eq('id', user.id)
+        .single();
+
+      const callerName = senderProfile?.full_name || senderProfile?.username || 'YUHU User';
+      const callerAvatar = senderProfile?.avatar_url || '';
+
+      // Send instant direct realtime call signal to the receiver phone
+      broadcastCallToUser(targetUserId, {
+        chatId,
+        callerId: user.id,
+        callerName,
+        callerAvatar,
+        callType: type,
+      }).catch((err) => console.warn('Failed to broadcast realtime call signal:', err));
+
+      // Also send high priority push notification for background / locked device
+      notificationService.sendCallPushNotification(
+        targetUserId,
+        chatId,
+        user.id,
+        callerName,
+        callerAvatar,
+        type
+      ).catch((err) => console.warn('Failed to send call notification:', err));
+
+      // Navigate directly to CallScreen
+      (navigation as any).navigate('Call', {
+        chatId,
+        friendId: targetUserId,
+        friendName: chatName,
+        friendAvatar: targetAvatar,
+        callType: type,
+        isIncoming: false,
+      });
+    } catch (err) {
+      console.error('Error starting call:', err);
+    }
+  };
+
   // Helper function to send push notifications to chat recipients
   const sendPushNotificationToRecipients = async (messageText: string, messageType: 'text' | 'image' | 'voice' | 'file' = 'text') => {
     if (!user || !chatId) return;
@@ -415,52 +483,8 @@ export default function ChatScreen() {
     }
   };
 
-  const buildEncryptedInsertPayload = async (plainText: string) => {
-    if (!user || !chatId) {
-      return {
-        text: plainText,
-        ciphertext: null,
-        nonce: null,
-        encryption_version: null,
-        sender_key_id: null,
-        content_type: 'text' as const,
-      };
-    }
-
-    try {
-      return await e2eeService.encryptDirectMessage({
-        chatId,
-        currentUserId: user.id,
-        plaintext: plainText,
-        isDirectChat,
-      });
-    } catch (error) {
-      console.error('Encryption failed, sending legacy plaintext fallback:', error);
-      return {
-        text: plainText,
-        ciphertext: null,
-        nonce: null,
-        encryption_version: null,
-        sender_key_id: null,
-        content_type: 'text' as const,
-      };
-    }
-  };
-
-  const resolveMessageText = async (msg: any): Promise<string> => {
-    const fallback = msg.text || msg.content || '';
-    if (!user?.id || !isDirectChat || !msg.ciphertext || !msg.nonce) {
-      return fallback;
-    }
-
-    const decrypted = await e2eeService.decryptDirectMessage({
-      currentUserId: user.id,
-      senderUserId: msg.sender_id,
-      ciphertext: msg.ciphertext,
-      nonce: msg.nonce,
-    });
-
-    return decrypted ?? 'Unable to decrypt message';
+  const resolveMessageText = (msg: any): string => {
+    return msg.text || msg.content || '';
   };
 
   const loadMessages = useCallback(async () => {
@@ -514,9 +538,9 @@ export default function ChatScreen() {
         }
       });
 
-      const formatted: Message[] = await Promise.all(ordered.map(async (msg: any) => {
+      const formatted: Message[] = ordered.map((msg: any) => {
         const profile = profilesMap.get(msg.sender_id);
-        const text = await resolveMessageText(msg);
+        const text = resolveMessageText(msg);
         const isImage = isImageUrl(text);
         const isVoice = isVoiceMessage(text);
         const messageReactions = reactionsMap.get(msg.id);
@@ -531,7 +555,7 @@ export default function ChatScreen() {
           type: isVoice ? 'voice' : isImage ? 'image' : undefined,
           reactions: messageReactions ? Array.from(messageReactions.values()) : [],
         };
-      }));
+      });
 
       setMessages(formatted);
       // Auto-scroll to bottom only if user is already near bottom
@@ -588,7 +612,7 @@ export default function ChatScreen() {
           }
 
           try {
-            const text = await resolveMessageText(payload.new);
+            const text = resolveMessageText(payload.new);
             const isImage = isImageUrl(text);
             const isVoice = isVoiceMessage(text);
 
@@ -734,6 +758,34 @@ export default function ChatScreen() {
     };
   }, [user?.id]); // Only re-run if user ID changes, not when chatId or loadMessages changes
 
+  // Listen for incoming call signals inside the current chat
+  useEffect(() => {
+    if (!chatId || !user?.id) return;
+
+    const callChannel = supabase.channel(`webrtc-signaling-${chatId}`);
+    callChannel
+      .on('broadcast', { event: 'signal' }, ({ payload }) => {
+        if (payload?.to === user.id && payload?.type === 'offer') {
+          // Received incoming call offer while inside this chat
+          (navigation as any).navigate('Call', {
+            chatId,
+            friendId: payload.from,
+            friendName: chatName,
+            friendAvatar: otherUserProfile?.avatar_url,
+            callType: payload.data?.callType || 'voice',
+            isIncoming: true,
+            incomingOffer: payload.data,
+          });
+        }
+      })
+      .subscribe();
+
+    return () => {
+      callChannel.unsubscribe();
+      supabase.removeChannel(callChannel);
+    };
+  }, [chatId, user?.id, chatName, otherUserProfile]);
+
   // Load messages when chatId changes
   useEffect(() => {
     if (!chatId || !user) return;
@@ -776,75 +828,95 @@ export default function ChatScreen() {
   }, [messages.length]); // Trigger when message count changes
 
   const sendMessage = async () => {
-    if (!inputText.trim() || !user || sending) return;
-
     const text = inputText.trim();
+    if (!text || !user || sending) return;
+
     setSending(true);
 
-    try {
-      // Build combined text including reply prefix (so all devices see it)
-      const replyPrefix =
-        replyTo && replyTo.content
-          ? `↩️ ${replyTo.sender_id === user.id ? 'You' : replyTo.sender_name || 'User'}: ${
-              replyTo.content.length > 80
-                ? `${replyTo.content.slice(0, 77).replace(/\n/g, ' ')}...`
-                : replyTo.content.replace(/\n/g, ' ')
-            }\n\n`
-          : '';
-      const combinedText = `${replyPrefix}${text}`;
-      const encryptedPayload = await buildEncryptedInsertPayload(combinedText);
+    // Build combined text including reply prefix (so all devices see it)
+    const replyPrefix =
+      replyTo && replyTo.content
+        ? `↩️ ${replyTo.sender_id === user.id ? 'You' : replyTo.sender_name || 'User'}: ${
+            replyTo.content.length > 80
+              ? `${replyTo.content.slice(0, 77).replace(/\n/g, ' ')}...`
+              : replyTo.content.replace(/\n/g, ' ')
+          }\n\n`
+        : '';
+    const combinedText = `${replyPrefix}${text}`;
+    const replyToId = replyTo?.id || null;
 
+    // Immediately clear input and reply for instant responsiveness
+    setInputText('');
+    setReplyTo(null);
+
+    // Add optimistic message to chat screen immediately
+    const tempId = `temp-${Date.now()}`;
+    const optimisticMessage: Message = {
+      id: tempId,
+      content: combinedText,
+      sender_id: user.id,
+      created_at: new Date().toISOString(),
+      sender_name: 'You',
+      media_url: undefined,
+      type: 'text',
+      reactions: [],
+    };
+
+    setMessages((prev) => [...prev, optimisticMessage]);
+    setTimeout(() => {
+      flatListRef.current?.scrollToEnd({ animated: true });
+    }, 50);
+
+    try {
       const { data, error } = await supabase
         .from('messages')
         .insert({
           chat_id: chatId,
           sender_id: user.id,
-          text: encryptedPayload.text,
-          ciphertext: encryptedPayload.ciphertext,
-          nonce: encryptedPayload.nonce,
-          encryption_version: encryptedPayload.encryption_version,
-          sender_key_id: encryptedPayload.sender_key_id,
-          content_type: encryptedPayload.content_type,
+          text: combinedText,
+          type: 'text',
           status: 'sent',
           created_at: new Date().toISOString(),
+          replyTo: replyToId,
         })
         .select()
         .single();
 
-      if (!error && data) {
-        const optimisticMessage: Message = {
-          id: data.id,
-          content: combinedText,
-          sender_id: data.sender_id,
-          created_at: data.created_at,
-          sender_name: 'You',
-          media_url: data.media_url,
-          type: data.type,
-          reactions: [],
-        };
-
-        // Add message optimistically, but real-time subscription will also add it
-        // We prevent duplicates by checking message ID in the subscription handler
-        setMessages((prev) => {
-          // Check if message already exists (shouldn't happen, but just in case)
-          const exists = prev.some((msg) => msg.id === data.id);
-          if (exists) {
-            return prev;
-          }
-          return [...prev, optimisticMessage];
-        });
-        setInputText('');
-        setReplyTo(null);
-
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 50);
-
-        // Send push notification to recipients
-        await sendPushNotificationToRecipients(text, 'text');
+      if (error) {
+        console.error('Error sending message:', error);
+        // Rollback optimistic message & restore text on failure
+        setMessages((prev) => prev.filter((m) => m.id !== tempId));
+        setInputText(text);
+        Alert.alert('Send Error', error.message || 'Failed to send message.');
+        return;
       }
-    } catch (err) {
+
+      if (data) {
+        // Update temp optimistic message with actual data from database
+        setMessages((prev) =>
+          prev.map((msg) =>
+            msg.id === tempId
+              ? {
+                  ...msg,
+                  id: data.id,
+                  created_at: data.created_at,
+                  media_url: data.media_url,
+                  type: data.type || 'text',
+                }
+              : msg
+          )
+        );
+
+        // Send push notification to recipients asynchronously
+        sendPushNotificationToRecipients(text, 'text').catch((pushErr) => {
+          console.warn('Push notification delivery warning:', pushErr);
+        });
+      }
+    } catch (err: any) {
       console.error('Error sending message:', err);
+      setMessages((prev) => prev.filter((m) => m.id !== tempId));
+      setInputText(text);
+      Alert.alert('Send Error', err?.message || 'Failed to send message.');
     } finally {
       setSending(false);
     }
@@ -932,18 +1004,13 @@ export default function ChatScreen() {
         .getPublicUrl(storageData.path);
 
       const url = publicUrlData.publicUrl;
-      const encryptedPayload = await buildEncryptedInsertPayload(url);
 
       // Store voice URL in text field like web PWA does
       const { data: messageData, error: messageError } = await supabase.from('messages').insert({
         chat_id: chatId,
         sender_id: user.id,
-        text: encryptedPayload.text,
-        ciphertext: encryptedPayload.ciphertext,
-        nonce: encryptedPayload.nonce,
-        encryption_version: encryptedPayload.encryption_version,
-        sender_key_id: encryptedPayload.sender_key_id,
-        content_type: encryptedPayload.content_type,
+        text: url,
+        type: 'voice',
         status: 'sent',
         created_at: new Date().toISOString(),
       }).select().single();
@@ -1075,20 +1142,14 @@ export default function ChatScreen() {
         .getPublicUrl(storageData.path);
 
       const url = publicUrlData.publicUrl;
-
-      // Store file URL in text field like web PWA does
       const messageText = url;
-      const encryptedPayload = await buildEncryptedInsertPayload(messageText);
+      const fileType = isImage ? 'image' : 'file';
       
       const { data: messageData, error: messageError } = await supabase.from('messages').insert({
         chat_id: chatId,
         sender_id: user.id,
-        text: encryptedPayload.text,
-        ciphertext: encryptedPayload.ciphertext,
-        nonce: encryptedPayload.nonce,
-        encryption_version: encryptedPayload.encryption_version,
-        sender_key_id: encryptedPayload.sender_key_id,
-        content_type: encryptedPayload.content_type,
+        text: messageText,
+        type: fileType,
         status: 'sent',
         created_at: new Date().toISOString(),
       }).select().single();
@@ -1166,19 +1227,14 @@ export default function ChatScreen() {
         .getPublicUrl(storageData.path);
 
       const url = publicUrlData.publicUrl;
-      const encryptedPayload = await buildEncryptedInsertPayload(url);
 
       const { data: messageData, error: messageError } = await supabase
         .from('messages')
         .insert({
           chat_id: chatId,
           sender_id: user.id,
-          text: encryptedPayload.text,
-          ciphertext: encryptedPayload.ciphertext,
-          nonce: encryptedPayload.nonce,
-          encryption_version: encryptedPayload.encryption_version,
-          sender_key_id: encryptedPayload.sender_key_id,
-          content_type: encryptedPayload.content_type,
+          text: url,
+          type: 'image',
           status: 'sent',
           created_at: new Date().toISOString(),
         })
@@ -1283,19 +1339,15 @@ export default function ChatScreen() {
 
       // Store as JSON array if multiple, or single URL if one
       const messageText = imageUrls.length > 1 ? JSON.stringify(imageUrls) : imageUrls[0];
-      const encryptedPayload = await buildEncryptedInsertPayload(messageText);
+      const msgType = imageUrls.length > 1 ? 'multiple-images' : 'image';
 
       const { data: messageData, error: messageError } = await supabase
         .from('messages')
         .insert({
           chat_id: chatId,
           sender_id: user.id,
-          text: encryptedPayload.text,
-          ciphertext: encryptedPayload.ciphertext,
-          nonce: encryptedPayload.nonce,
-          encryption_version: encryptedPayload.encryption_version,
-          sender_key_id: encryptedPayload.sender_key_id,
-          content_type: encryptedPayload.content_type,
+          text: messageText,
+          type: msgType,
           status: 'sent',
           created_at: new Date().toISOString(),
         })
@@ -1697,11 +1749,8 @@ export default function ChatScreen() {
   }, []);
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-      keyboardVerticalOffset={Platform.OS === 'ios' ? 90 : 0}
-    >
+    <View style={styles.container}>
+      <StatusBar barStyle="light-content" backgroundColor="#18181b" translucent={false} />
       <View style={styles.header}>
         <TouchableOpacity
           style={styles.headerBackButton}
@@ -1741,9 +1790,16 @@ export default function ChatScreen() {
           </TouchableOpacity>
         )}
 
-        <Text style={styles.headerTitle} numberOfLines={1}>
-          {isSelecting ? `${selectedMessages.size} selected` : chatName}
-        </Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle} numberOfLines={1}>
+            {isSelecting ? `${selectedMessages.size} selected` : chatName}
+          </Text>
+          {!isSelecting && (
+            <Text style={styles.headerSubtitle} numberOfLines={1}>
+              {otherUserProfile?.status === 'online' ? 'Online' : 'YUHU Chat'}
+            </Text>
+          )}
+        </View>
 
         {isSelecting ? (
           <TouchableOpacity
@@ -1770,13 +1826,30 @@ export default function ChatScreen() {
             <Ionicons name="trash-outline" size={22} color="#f97373" />
           </TouchableOpacity>
         ) : (
-          <TouchableOpacity
-            style={styles.headerMenuButton}
-            onPress={() => {
-              setActionSheet({
-                visible: true,
-                title: 'Chat Options',
-                options: [
+          <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => startCall('voice')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="call" size={20} color="#f9fafb" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.headerIconButton}
+              onPress={() => startCall('video')}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="videocam" size={22} color="#f9fafb" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.headerMenuButton}
+              onPress={() => {
+                setActionSheet({
+                  visible: true,
+                  title: 'Chat Options',
+                  options: [
                   {
                     label: 'Clear Chat',
                     icon: 'trash-outline',
@@ -1807,16 +1880,24 @@ export default function ChatScreen() {
           >
             <Ionicons name="ellipsis-vertical" size={22} color="#e5e7eb" />
           </TouchableOpacity>
+          </View>
         )}
       </View>
 
-      <ImageBackground
-        source={require('../../assets/chat2.jpg')}
-        style={styles.backgroundImage}
-        resizeMode="cover"
-        imageStyle={styles.backgroundImageStyle}
+      <KeyboardAvoidingView
+        style={styles.keyboardAvoid}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
       >
-        <FlatList
+        <View style={styles.chatArea}>
+          <ImageBackground
+            source={require('../../assets/chat2.jpg')}
+            style={styles.backgroundImage}
+            resizeMode="cover"
+            imageStyle={styles.backgroundImageStyle}
+          >
+            <View style={styles.backgroundOverlay}>
+              <FlatList
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
@@ -2082,84 +2163,83 @@ export default function ChatScreen() {
           </View>
         }
         />
-      </ImageBackground>
-
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
-        style={styles.inputWrapper}
-      >
-        {replyTo && (
-          <View style={styles.replyContainer}>
-            <View style={styles.replyBar} />
-            <View style={styles.replyContent}>
-              <Text style={styles.replyTitle}>
-                Replying to {replyTo.sender_id === user?.id ? 'You' : replyTo.sender_name || 'User'}
-              </Text>
-              {replyTo.content ? (
-                <Text
-                  style={styles.replySnippet}
-                  numberOfLines={1}
-                >
-                  {replyTo.content}
-                </Text>
-              ) : null}
             </View>
+          </ImageBackground>
+        </View>
+
+        <View style={styles.inputWrapper}>
+          {replyTo && (
+            <View style={styles.replyContainer}>
+              <View style={styles.replyBar} />
+              <View style={styles.replyContent}>
+                <Text style={styles.replyTitle}>
+                  Replying to {replyTo.sender_id === user?.id ? 'You' : replyTo.sender_name || 'User'}
+                </Text>
+                {replyTo.content ? (
+                  <Text
+                    style={styles.replySnippet}
+                    numberOfLines={1}
+                  >
+                    {replyTo.content}
+                  </Text>
+                ) : null}
+              </View>
+              <TouchableOpacity
+                style={styles.replyCloseButton}
+                onPress={() => setReplyTo(null)}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="close" size={16} color="#e5e7eb" />
+              </TouchableOpacity>
+            </View>
+          )}
+          <View style={styles.inputContainer}>
             <TouchableOpacity
-              style={styles.replyCloseButton}
-              onPress={() => setReplyTo(null)}
+              style={styles.iconButton}
+              onPress={handleAttachFile}
               activeOpacity={0.7}
             >
-              <Ionicons name="close" size={16} color="#e5e7eb" />
+              <Ionicons name="attach" size={22} color="#a1a1aa" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.iconButton}
+              onPress={handleCameraOrGallery}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="camera-outline" size={22} color="#a1a1aa" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.iconButton, isRecording && styles.iconButtonRecording]}
+              onPress={isRecording ? stopRecordingAndSend : startRecording}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name={isRecording ? 'stop-circle' : 'mic-outline'}
+                size={22}
+                color={isRecording ? '#ef4444' : '#a1a1aa'}
+              />
+            </TouchableOpacity>
+
+            <TextInput
+              style={styles.input}
+              placeholder="Type a message..."
+              placeholderTextColor="#71717a"
+              value={inputText}
+              onChangeText={setInputText}
+              multiline
+              maxLength={1000}
+            />
+
+            <TouchableOpacity
+              style={[styles.sendButton, (!inputText.trim() || sending) && styles.sendButtonDisabled]}
+              onPress={sendMessage}
+              disabled={!inputText.trim() || sending}
+            >
+              <Ionicons name="send" size={19} color="#ffffff" />
             </TouchableOpacity>
           </View>
-        )}
-        <View style={styles.inputContainer}>
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={handleAttachFile}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="attach" size={22} color="#e5e7eb" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.iconButton}
-            onPress={handleCameraOrGallery}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="camera-outline" size={22} color="#e5e7eb" />
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={[styles.iconButton, isRecording && styles.iconButtonRecording]}
-            onPress={isRecording ? stopRecordingAndSend : startRecording}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name={isRecording ? 'stop-circle' : 'mic-outline'}
-              size={22}
-              color={isRecording ? '#ef4444' : '#e5e7eb'}
-            />
-          </TouchableOpacity>
-
-          <TextInput
-            style={styles.input}
-            placeholder="Type a message..."
-            placeholderTextColor="#6b7280"
-            value={inputText}
-            onChangeText={setInputText}
-            multiline
-            maxLength={1000}
-          />
-
-          <TouchableOpacity
-            style={[styles.sendButton, (!inputText.trim() || sending) && styles.sendButtonDisabled]}
-            onPress={sendMessage}
-            disabled={!inputText.trim() || sending}
-          >
-          <Ionicons name="send" size={20} color="#ffffff" />
-        </TouchableOpacity>
         </View>
       </KeyboardAvoidingView>
 
@@ -2341,43 +2421,52 @@ export default function ChatScreen() {
           </View>
         </TouchableOpacity>
       </Modal>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: 'transparent',
+    backgroundColor: '#0c0d12',
+  },
+  keyboardAvoid: {
+    flex: 1,
+  },
+  chatArea: {
+    flex: 1,
+    backgroundColor: '#0c0d12',
+    overflow: 'hidden',
   },
   header: {
-    paddingTop: 50,
-    paddingBottom: 12,
-    paddingHorizontal: 16,
-    backgroundColor: 'rgba(0, 0, 0, 0.84)',
-    borderBottomWidth: 0,
+    paddingTop: Platform.OS === 'android' ? (StatusBar.currentHeight || 24) + 8 : (Platform.OS === 'web' ? 14 : 50),
+    paddingBottom: 10,
+    paddingHorizontal: 14,
+    backgroundColor: '#18181b',
+    borderBottomWidth: 1,
+    borderBottomColor: '#27272a',
     flexDirection: 'row',
     alignItems: 'center',
     zIndex: 10,
   },
   headerBackButton: {
-    marginRight: 8,
-    padding: 4,
+    marginRight: 6,
+    padding: 6,
   },
   headerProfileButton: {
-    marginRight: 12,
+    marginRight: 10,
   },
   headerAvatar: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'transparent',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#27272a',
   },
   headerAvatarPlaceholder: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: '#4f46e5',
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#6C63FF',
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -2386,39 +2475,56 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
   },
-  headerTitle: {
+  headerTitleContainer: {
     flex: 1,
-    fontSize: 20,
+    justifyContent: 'center',
+  },
+  headerTitle: {
+    fontSize: 16,
     fontWeight: '600',
     color: '#f9fafb',
   },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#9ca3af',
+    marginTop: 1,
+  },
   headerMenuButton: {
     padding: 8,
-    marginLeft: 8,
+    marginLeft: 2,
+  },
+  headerIconButton: {
+    padding: 8,
+    marginLeft: 4,
   },
   messagesList: {
-    padding: 16,
-    paddingBottom: 8,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 16,
+    flexGrow: 1,
   },
   messageContainer: {
-    marginBottom: 12,
+    marginBottom: 8,
     alignItems: 'flex-start',
   },
   messageContainerMe: {
     alignItems: 'flex-end',
   },
   messageBubble: {
-    maxWidth: '80%',
+    maxWidth: '82%',
     backgroundColor: '#27272a',
-    borderRadius: 14,
-    paddingHorizontal: 10,
+    borderRadius: 16,
+    paddingHorizontal: 12,
     paddingVertical: 8,
     borderBottomLeftRadius: 4,
+    borderWidth: 1,
+    borderColor: '#323238',
   },
   messageBubbleMe: {
     backgroundColor: '#6C63FF',
     borderBottomLeftRadius: 16,
     borderBottomRightRadius: 4,
+    borderColor: 'transparent',
   },
   messageBubbleSelected: {
     borderWidth: 2,
@@ -2432,8 +2538,8 @@ const styles = StyleSheet.create({
   },
   messageText: {
     fontSize: 15,
-    color: '#e5e7eb',
-    lineHeight: 20,
+    color: '#f3f4f6',
+    lineHeight: 21,
   },
   messageTextMe: {
     color: '#ffffff',
@@ -2476,12 +2582,14 @@ const styles = StyleSheet.create({
   messageImageWrapper: {
     position: 'relative',
     alignSelf: 'flex-start',
+    borderRadius: 14,
+    overflow: 'hidden',
   },
   messageImage: {
-    width: 170,
-    height: 170,
-    borderRadius: 12,
-    backgroundColor: '#000000',
+    width: 220,
+    height: 220,
+    borderRadius: 14,
+    backgroundColor: '#18181b',
   },
   downloadIconOverlay: {
     position: 'absolute',
@@ -2619,16 +2727,24 @@ const styles = StyleSheet.create({
   },
   backgroundImage: {
     flex: 1,
+    width: '100%',
+    height: '100%',
   },
   backgroundImageStyle: {
-    opacity: 1,
+    opacity: 0.05,
+  },
+  backgroundOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(12, 13, 18, 0.94)',
   },
   flatList: {
     flex: 1,
   },
   inputWrapper: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
-    borderTopWidth: 0,
+    backgroundColor: '#18181b',
+    borderTopWidth: 1,
+    borderTopColor: '#27272a',
+    paddingBottom: Platform.OS === 'ios' ? 24 : 8,
   },
   replyContainer: {
     flexDirection: 'row',
@@ -2710,32 +2826,32 @@ const styles = StyleSheet.create({
   },
   inputContainer: {
     flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 8,
     backgroundColor: 'transparent',
   },
   iconButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 38,
+    height: 38,
+    borderRadius: 19,
     backgroundColor: '#27272a',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 6,
   },
   iconButtonRecording: {
-    backgroundColor: '#3f1d1d',
+    backgroundColor: '#7f1d1d',
   },
   input: {
     flex: 1,
     backgroundColor: '#27272a',
-    borderRadius: 20,
+    borderRadius: 22,
     paddingHorizontal: 16,
-    paddingVertical: 10,
+    paddingVertical: Platform.OS === 'ios' ? 10 : 8,
     color: '#f9fafb',
     fontSize: 15,
-    maxHeight: 100,
+    maxHeight: 110,
     marginRight: 8,
     borderWidth: 1,
     borderColor: '#3f3f46',
@@ -2749,8 +2865,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   sendButtonDisabled: {
-    backgroundColor: '#3f3f46',
-    opacity: 0.5,
+    backgroundColor: '#27272a',
+    opacity: 0.4,
   },
   swipeReplyAction: {
     justifyContent: 'center',

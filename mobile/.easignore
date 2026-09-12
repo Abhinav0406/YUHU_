@@ -1,0 +1,13 @@
+# Ignore node_modules and build artifacts
+node_modules/
+.expo/
+dist/
+web-build/
+.cache/
+.turbo/
+*.log
+.DS_Store
+Thumbs.db
+
+# Ensure google-services.json is included in the EAS build archive
+!google-services.json

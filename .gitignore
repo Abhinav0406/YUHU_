@@ -1,0 +1,14 @@
+# Firebase / Google Credentials
+**/google-services.json
+**/.google-services.json
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Node
+node_modules/
+dist/
+build/
+.expo/

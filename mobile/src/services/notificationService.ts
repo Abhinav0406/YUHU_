@@ -67,15 +67,48 @@ export class NotificationService {
       // Store FCM token in Supabase so the Edge Function can send via FCM
       await this.saveTokenToSupabase(userId, this.devicePushToken);
 
-      // Configure Android channel for notifications
+      // Configure Android channels for notifications
       if (Platform.OS === 'android') {
         await Notifications.setNotificationChannelAsync('default', {
-          name: 'default',
-          importance: Notifications.AndroidImportance.MAX,
+          name: 'Default Messages',
+          importance: Notifications.AndroidImportance.HIGH,
           vibrationPattern: [0, 250, 250, 250],
           lightColor: '#6C63FF',
           sound: 'default',
         });
+
+        await Notifications.setNotificationChannelAsync('calls', {
+          name: 'Incoming Calls',
+          importance: Notifications.AndroidImportance.MAX,
+          vibrationPattern: [0, 500, 250, 500, 250, 500],
+          lightColor: '#22c55e',
+          sound: 'default',
+          lockscreenVisibility: Notifications.AndroidNotificationVisibility.PUBLIC,
+          bypassDnd: true,
+        });
+      }
+
+      // Register interactive notification category with Accept and Decline action buttons
+      try {
+        await Notifications.setNotificationCategoryAsync('incoming_call', [
+          {
+            identifier: 'accept',
+            buttonTitle: 'Accept',
+            options: {
+              opensAppToForeground: true,
+            },
+          },
+          {
+            identifier: 'decline',
+            buttonTitle: 'Decline',
+            options: {
+              isDestructive: true,
+              opensAppToForeground: false,
+            },
+          },
+        ]);
+      } catch (catErr) {
+        console.warn('Could not register notification category:', catErr);
       }
 
       return this.devicePushToken;
@@ -239,6 +272,33 @@ export class NotificationService {
       console.error('❌ Exception sending push notification:', error);
       console.error('❌ Exception details:', JSON.stringify(error, null, 2));
     }
+  }
+
+  /**
+   * Send a high-priority call notification to wake up device and show WhatsApp-style call screen
+   */
+  public async sendCallPushNotification(
+    toUserId: string,
+    chatId: string,
+    callerId: string,
+    callerName: string,
+    callerAvatar?: string,
+    callType: 'voice' | 'video' = 'voice'
+  ): Promise<void> {
+    const title = `Incoming ${callType === 'video' ? 'Video' : 'Voice'} Call`;
+    const body = `${callerName} is calling you...`;
+
+    await this.sendPushNotification(toUserId, title, body, {
+      type: 'incoming_call',
+      callType,
+      chatId,
+      callerId,
+      callerName,
+      callerAvatar,
+      priority: 'high',
+      channelId: 'calls',
+      categoryIdentifier: 'incoming_call',
+    });
   }
 }
 

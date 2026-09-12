@@ -17,9 +17,22 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   useEffect(() => {
     const init = async () => {
-      const { data } = await supabase.auth.getSession();
-      handleSession(data.session);
-      setLoading(false);
+      try {
+        const { data, error } = await supabase.auth.getSession();
+        if (error) {
+          console.warn('[Auth] Session error, clearing invalid credentials:', error.message);
+          await supabase.auth.signOut().catch(() => {});
+          handleSession(null);
+        } else {
+          handleSession(data.session);
+        }
+      } catch (err) {
+        console.warn('[Auth] Error getting session:', err);
+        await supabase.auth.signOut().catch(() => {});
+        handleSession(null);
+      } finally {
+        setLoading(false);
+      }
 
       const {
         data: { subscription },
