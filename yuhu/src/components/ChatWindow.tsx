@@ -44,6 +44,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const [callError, setCallError] = useState<string | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
+  const remoteAudioRef = useRef<HTMLAudioElement>(null);
   const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
@@ -400,6 +401,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setIsCalling(true);
     setShowCallModal(true);
     setCallStartTime(Date.now());
+    setIsMuted(false);
+
+    // Unlock audio element on user gesture
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.play().catch(() => {});
+    }
     
     // Set camera state based on call type
     setIsCameraOn(type === 'video');
@@ -421,6 +428,12 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     setIsReceivingCall(false);
     setShowCallModal(true);
     setCallStartTime(Date.now());
+    setIsMuted(false);
+
+    // Unlock audio element on user gesture
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.play().catch(() => {});
+    }
     
     // Set camera state based on incoming call type
     setIsCameraOn(callType === 'video');
@@ -485,6 +498,9 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
+    if (remoteAudioRef.current) {
+      remoteAudioRef.current.srcObject = null;
+    }
     remoteStreamRef.current = null;
     iceCandidateQueueRef.current = [];
     incomingOfferRef.current = null;
@@ -530,13 +546,23 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
 
       console.log(`Starting ${type} call setup...`);
       
-      // Get local media based on call type
+      // Get local media based on call type with echo cancellation and noise suppression
       const localStream = await navigator.mediaDevices.getUserMedia({ 
-        video: type === 'video', 
-        audio: true 
+        video: type === 'video' ? {
+          width: { ideal: 1280 },
+          height: { ideal: 720 },
+          facingMode: 'user'
+        } : false, 
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        }
       });
       
       console.log('Local media stream obtained:', localStream.getTracks().map(t => t.kind));
+      // Ensure all local audio tracks are enabled
+      localStream.getAudioTracks().forEach(track => { track.enabled = true; });
       localStreamRef.current = localStream;
       
       if (localVideoRef.current) {
@@ -558,116 +584,58 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         pc.addTrack(track, localStream);
       });
 
-      // Handle remote stream with enhanced debugging
+      // Handle remote stream with dedicated audio and video routing
       pc.ontrack = (event) => {
         console.log('📺 Received remote track event:', {
-          track: event.track,
           kind: event.track.kind,
+          id: event.track.id,
           readyState: event.track.readyState,
           enabled: event.track.enabled,
           muted: event.track.muted,
           streams: event.streams?.length || 0
         });
-        
-        if (event.streams && event.streams[0]) {
-          const remoteStream = event.streams[0];
-          remoteStreamRef.current = remoteStream;
-          
-          // Enhanced track logging
-          const videoTracks = remoteStream.getVideoTracks();
-          const audioTracks = remoteStream.getAudioTracks();
-          
-          console.log('📺 Remote stream analysis:', {
-            streamId: remoteStream.id,
-            videoTracks: videoTracks.length,
-            audioTracks: audioTracks.length,
-            videoTrackState: videoTracks[0]?.readyState,
-            audioTrackState: audioTracks[0]?.readyState,
-            active: remoteStream.active
+
+        // Ensure remoteStream has all incoming tracks
+        let remoteStream = event.streams && event.streams[0] ? event.streams[0] : remoteStreamRef.current;
+        if (!remoteStream) {
+          remoteStream = new MediaStream();
+        }
+        if (!remoteStream.getTracks().some(t => t.id === event.track.id)) {
+          remoteStream.addTrack(event.track);
+        }
+        remoteStreamRef.current = remoteStream;
+
+        const videoTracks = remoteStream.getVideoTracks();
+        const audioTracks = remoteStream.getAudioTracks();
+
+        console.log('📺 Remote stream analysis:', {
+          videoTracks: videoTracks.length,
+          audioTracks: audioTracks.length,
+          active: remoteStream.active
+        });
+
+        if (videoTracks.length > 0) {
+          console.log('✅ Remote video tracks found, setting available');
+          setRemoteVideoAvailable(true);
+        }
+
+        // 1. Play audio via dedicated remoteAudioRef element
+        if (remoteAudioRef.current) {
+          console.log('🔊 Setting remote audio srcObject');
+          remoteAudioRef.current.srcObject = remoteStream;
+          remoteAudioRef.current.volume = 1.0;
+          remoteAudioRef.current.play().catch(err => {
+            console.warn('Remote audio autoplay catch (waiting for interaction):', err);
           });
-          
-          // Set video availability
-          if (videoTracks.length === 0) {
-            console.warn('⚠️ No remote video tracks found!');
-            setRemoteVideoAvailable(false);
-          } else {
-            console.log('✅ Remote video tracks found, setting available');
-            setRemoteVideoAvailable(true);
-          }
-          
-          // Enhanced video element handling
-          if (remoteVideoRef.current) {
-            console.log('📺 Setting remote video srcObject');
-            remoteVideoRef.current.srcObject = remoteStream;
-            
-            // Force video to play with better error handling
-            const playPromise = remoteVideoRef.current.play();
-            
-            if (playPromise !== undefined) {
-              playPromise
-                .then(() => {
-                  console.log('✅ Remote video is playing successfully');
-                  console.log('📺 Video dimensions:', {
-                    videoWidth: remoteVideoRef.current?.videoWidth,
-                    videoHeight: remoteVideoRef.current?.videoHeight
-                  });
-                })
-                .catch(err => {
-                  console.error('❌ Error playing remote video:', err);
-                  
-                  // Try to enable autoplay
-                  if (remoteVideoRef.current) {
-                    remoteVideoRef.current.muted = true;
-                    remoteVideoRef.current.play().catch(err2 => {
-                      console.error('❌ Error playing muted remote video:', err2);
-                    });
-                  }
-                });
-            }
-            
-            // Add event listeners for debugging
-            remoteVideoRef.current.onloadedmetadata = () => {
-              console.log('📺 Remote video metadata loaded');
-            };
-            
-            remoteVideoRef.current.oncanplay = () => {
-              console.log('📺 Remote video can play');
-            };
-            
-            remoteVideoRef.current.onerror = (error) => {
-              console.error('📺 Remote video error:', error);
-            };
-            
-          } else {
-            console.error('❌ remoteVideoRef.current is null!');
-          }
-          
-          // Monitor track changes
-          remoteStream.getTracks().forEach((track, index) => {
-            console.log(`📺 Track ${index} (${track.kind}):`, {
-              id: track.id,
-              kind: track.kind,
-              enabled: track.enabled,
-              muted: track.muted,
-              readyState: track.readyState
-            });
-            
-            track.onended = () => {
-              console.log(`📺 Remote ${track.kind} track ended`);
-            };
-            
-            track.onmute = () => {
-              console.log(`🔇 Remote ${track.kind} track muted`);
-            };
-            
-            track.onunmute = () => {
-              console.log(`🔊 Remote ${track.kind} track unmuted`);
-            };
+        }
+
+        // 2. Play video via remoteVideoRef element
+        if (remoteVideoRef.current) {
+          console.log('📺 Setting remote video srcObject');
+          remoteVideoRef.current.srcObject = remoteStream;
+          remoteVideoRef.current.play().catch(err => {
+            console.warn('Remote video play catch:', err);
           });
-          
-        } else {
-          console.error('❌ No remote stream found in ontrack event');
-          setRemoteVideoAvailable(false);
         }
       };
 
@@ -880,13 +848,21 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     };
   }, [activeChatId, user?.id, chatDetails?.name]);
 
-  // Attach video refs on modal open
+  // Attach media refs on modal open
   useEffect(() => {
-    if (showCallModal && localVideoRef.current && localStreamRef.current) {
-      localVideoRef.current.srcObject = localStreamRef.current;
-    }
-    if (showCallModal && remoteVideoRef.current && remoteStreamRef.current) {
-      remoteVideoRef.current.srcObject = remoteStreamRef.current;
+    if (showCallModal) {
+      if (localVideoRef.current && localStreamRef.current) {
+        localVideoRef.current.srcObject = localStreamRef.current;
+      }
+      if (remoteVideoRef.current && remoteStreamRef.current) {
+        remoteVideoRef.current.srcObject = remoteStreamRef.current;
+        remoteVideoRef.current.play().catch(() => {});
+      }
+      if (remoteAudioRef.current && remoteStreamRef.current) {
+        remoteAudioRef.current.srcObject = remoteStreamRef.current;
+        remoteAudioRef.current.volume = 1.0;
+        remoteAudioRef.current.play().catch(() => {});
+      }
     }
   }, [showCallModal]);
 
@@ -1060,6 +1036,13 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       {/* Call Modal */}
       <Dialog open={showCallModal || isReceivingCall} onOpenChange={endCall}>
         <DialogContent className="max-w-lg w-full rounded-2xl bg-gradient-to-br from-zinc-900 via-zinc-800 to-zinc-900 shadow-2xl p-0 overflow-hidden flex flex-col items-center">
+          {/* Dedicated Remote Audio Player - Always mounted to guarantee audio for voice and video */}
+          <audio
+            ref={remoteAudioRef}
+            autoPlay
+            playsInline
+            className="hidden"
+          />
           <div className="w-full flex flex-col items-center p-6 pb-2">
             <h2 className="text-xl font-bold mb-2 text-yuhu-primary tracking-tight">
               {isReceivingCall ? `Incoming ${callType === 'voice' ? 'Voice' : 'Video'} Call` : `${callType === 'voice' ? 'Voice' : 'Video'} Call in Progress`}
@@ -1165,6 +1148,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
                     <video
                       ref={remoteVideoRef}
                       autoPlay
+                      muted
                       playsInline
                       className={`rounded-2xl shadow-lg bg-black w-64 h-64 object-cover border-4 border-yuhu-primary max-w-full ${!remoteVideoAvailable ? 'hidden' : ''}`}
                     />
