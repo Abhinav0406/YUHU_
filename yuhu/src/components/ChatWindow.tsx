@@ -40,6 +40,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const [showCallModal, setShowCallModal] = useState(false);
   const [isCalling, setIsCalling] = useState(false);
   const [isReceivingCall, setIsReceivingCall] = useState(false);
+  const [incomingOffer, setIncomingOffer] = useState<any>(null);
   const [callError, setCallError] = useState<string | null>(null);
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const remoteVideoRef = useRef<HTMLVideoElement>(null);
@@ -47,6 +48,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   const localStreamRef = useRef<MediaStream | null>(null);
   const remoteStreamRef = useRef<MediaStream | null>(null);
   const signalingUnsubRef = useRef<() => void>();
+  const iceCandidateQueueRef = useRef<RTCIceCandidate[]>([]);
   
   const activeChatId = propChatId || paramChatId;
   const [isTyping, setIsTyping] = useState(false);
@@ -426,7 +428,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
       duration: null
     });
     toast('Call accepted');
-    await setupMediaAndConnection(false, callType);
+    await setupMediaAndConnection(false, callType, incomingOffer);
   };
   // End call: reset start time and notify other party
   const endCall = () => {
@@ -455,6 +457,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
     localStreamRef.current?.getTracks().forEach(track => track.stop());
     localStreamRef.current = null;
     remoteStreamRef.current = null;
+    iceCandidateQueueRef.current = [];
+    setIncomingOffer(null);
     if (signalingUnsubRef.current) {
       signalingUnsubRef.current();
       signalingUnsubRef.current = undefined;
@@ -486,7 +490,7 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
   };
 
   // Setup media and peer connection
-  const setupMediaAndConnection = async (isCaller: boolean, type: 'voice' | 'video' = 'video') => {
+  const setupMediaAndConnection = async (isCaller: boolean, type: 'voice' | 'video' = 'video', receivedOffer?: any) => {
     try {
       // Check if WebRTC is supported
       if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
@@ -730,22 +734,33 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
             } else if (msg.type === 'answer' && isCaller) {
               console.log('Handling incoming answer:', msg.data);
               console.log('Current signaling state:', pc.signalingState);
-              
+
               if (pc.signalingState !== 'have-local-offer') {
                 console.warn('Unexpected signaling state for answer:', pc.signalingState);
               }
-              
+
               await pc.setRemoteDescription(new RTCSessionDescription(msg.data));
               console.log('Remote description set from answer');
-              
+
+              // Drain any ICE candidates that arrived before the answer
+              for (const candidate of iceCandidateQueueRef.current) {
+                try { await pc.addIceCandidate(candidate); } catch (e) { console.warn('Queued ICE error:', e); }
+              }
+              iceCandidateQueueRef.current = [];
+
             } else if (msg.type === 'ice') {
               console.log('Received ICE candidate:', msg.data);
-              
+
               if (pc.remoteDescription) {
-                await pc.addIceCandidate(new RTCIceCandidate(msg.data));
-                console.log('ICE candidate added successfully');
+                try {
+                  await pc.addIceCandidate(new RTCIceCandidate(msg.data));
+                  console.log('ICE candidate added successfully');
+                } catch (e) {
+                  console.warn('Failed to add ICE candidate:', e);
+                }
               } else {
-                console.warn('Received ICE candidate but no remote description set');
+                console.log('Queuing ICE candidate (remote description not set yet)');
+                iceCandidateQueueRef.current.push(new RTCIceCandidate(msg.data));
               }
               
             } else if (msg.type === 'hangup') {
@@ -762,6 +777,37 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
             }
           }
         });
+      }
+
+      // Callee: process the already-received offer immediately (it arrived before we set up this connection)
+      if (!isCaller && receivedOffer && friendId) {
+        try {
+          console.log('Processing received offer as callee');
+          await pc.setRemoteDescription(new RTCSessionDescription(receivedOffer));
+          console.log('Remote description set from received offer');
+
+          // Drain any ICE candidates that arrived before remote description
+          for (const candidate of iceCandidateQueueRef.current) {
+            try { await pc.addIceCandidate(candidate); } catch (e) { console.warn('Queued ICE error:', e); }
+          }
+          iceCandidateQueueRef.current = [];
+
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          console.log('Answer created and set as local description');
+
+          await sendSignal(activeChatId!, {
+            type: 'answer',
+            from: user.id,
+            to: friendId,
+            data: answer,
+          });
+          console.log('Answer sent to caller');
+        } catch (error) {
+          console.error('Error processing received offer:', error);
+          setCallError(`Failed to answer call: ${(error as Error).message}`);
+          endCall();
+        }
       }
 
       // Caller: create and send offer
@@ -825,7 +871,8 @@ const ChatWindow: React.FC<ChatWindowProps> = ({ chatId: propChatId, onClose }) 
         console.log('📞 Incoming call type:', incomingCallType);
         setCallType(incomingCallType);
         setIsReceivingCall(true);
-        
+        setIncomingOffer(msg.data);
+
         // Use notification service for call notifications
         notificationService.showCallNotification(
           chatDetails?.name || 'Someone',

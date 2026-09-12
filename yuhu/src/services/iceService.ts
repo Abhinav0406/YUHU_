@@ -1,51 +1,45 @@
-// Frontend service to fetch ICE servers from our backend
-const BACKEND_URL = import.meta.env.VITE_BACKEND_URL || 'http://localhost:3000';
-
 export interface RTCIceServer {
   urls: string | string[];
   username?: string;
   credential?: string;
 }
 
-export async function getIceServers(): Promise<RTCIceServer[]> {
-  // Enhanced free ICE servers for production use
-  const productionServers = [
-    // Free STUN servers (Google, Cloudflare, etc.)
-    { urls: 'stun:stun.l.google.com:19302' },
-    { urls: 'stun:stun1.l.google.com:19302' },
-    { urls: 'stun:stun2.l.google.com:19302' },
-    { urls: 'stun:stun3.l.google.com:19302' },
-    { urls: 'stun:stun4.l.google.com:19302' },
-    { urls: 'stun:stun.cloudflare.com:3478' },
-    { urls: 'stun:stun.nextcloud.com:443' },
-    { urls: 'stun:stun.voiparound.com:3478' },
-    { urls: 'stun:stun.voipstunt.com:3478' },
-    
-    // Free TURN servers for NAT traversal
-    {
-      urls: [
-        "turn:openrelay.metered.ca:80",
-        "turn:openrelay.metered.ca:443", 
-        "turn:openrelay.metered.ca:443?transport=tcp"
-      ],
-      username: "openrelayproject",
-      credential: "openrelayproject"
-    },
-    {
-      urls: [
-        "turn:global.turn.twilio.com:3478?transport=udp",
-        "turn:global.turn.twilio.com:3478?transport=tcp",
-        "turn:global.turn.twilio.com:443?transport=tcp"
-      ],
-      username: "free", // Twilio offers free TURN servers
-      credential: "free"
-    }
-  ];
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL as string;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
 
-  console.log('🚀 Using production ICE servers:', productionServers.length, 'servers');
-  console.log('💡 These servers are free and production-ready');
-  
-  return productionServers;
+const FALLBACK_SERVERS: RTCIceServer[] = [
+  { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'stun:stun1.l.google.com:19302' },
+  { urls: 'stun:stun2.l.google.com:19302' },
+  {
+    urls: [
+      'turn:openrelay.metered.ca:80',
+      'turn:openrelay.metered.ca:443',
+      'turn:openrelay.metered.ca:443?transport=tcp',
+    ],
+    username: 'openrelayproject',
+    credential: 'openrelayproject',
+  },
+];
+
+export async function getIceServers(): Promise<RTCIceServer[]> {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/functions/v1/get-ice-servers`, {
+      headers: {
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+        'Content-Type': 'application/json',
+      },
+    });
+
+    if (!res.ok) throw new Error(`Edge function returned ${res.status}`);
+
+    const servers = await res.json();
+    console.log('ICE servers fetched from edge function:', servers.length);
+    return servers;
+  } catch (error) {
+    console.warn('Edge function failed, using fallback ICE servers:', error);
+    return FALLBACK_SERVERS;
+  }
 }
 
 // Call quality monitoring utilities
